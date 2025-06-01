@@ -37,7 +37,12 @@ jobs:
     - name: Run CAKE linting suite (check-only mode)
       run: |
         chmod +x scripts/cake-lint.sh
-        ./scripts/cake-lint.sh cake/ --check-only --verbose
+        # Check cake package if it has Python files, otherwise skip
+        if find cake/ -name "*.py" -type f | grep -q .; then
+          ./scripts/cake-lint.sh cake/ --check-only --verbose
+        else
+          echo "No Python files in cake/ yet, skipping"
+        fi
     
     - name: Run CAKE script linting
       run: |
@@ -80,8 +85,14 @@ jobs:
     
     - name: Run Bandit security check
       run: |
-        bandit -r cake/ -ll -f json -o bandit-report.json || true
-        bandit -r cake/ -ll
+        # Check if there are Python files to scan
+        if find cake/ -name "*.py" -type f | grep -q .; then
+          bandit -r cake/ -ll -f json -o bandit-report.json || true
+          bandit -r cake/ -ll
+        else
+          echo "No Python files in cake/ yet, skipping bandit"
+          echo "{}" > bandit-report.json
+        fi
     
     - name: Run Safety check
       run: |
@@ -113,13 +124,22 @@ jobs:
     
     - name: Run Pylint
       run: |
-        pylint cake/ --exit-zero --output-format=json > pylint-report.json || true
-        echo "Pylint score:"
-        pylint cake/ --exit-zero | grep "Your code has been rated" || echo "No rating found"
+        if find cake/ -name "*.py" -type f | grep -q .; then
+          pylint cake/ --exit-zero --output-format=json > pylint-report.json || true
+          echo "Pylint score:"
+          pylint cake/ --exit-zero | grep "Your code has been rated" || echo "No rating found"
+        else
+          echo "No Python files in cake/ yet, skipping pylint"
+          echo "[]" > pylint-report.json
+        fi
     
     - name: Check for dead code
       run: |
-        vulture cake/ --min-confidence 80 || true
+        if find cake/ -name "*.py" -type f | grep -q .; then
+          vulture cake/ --min-confidence 80 || true
+        else
+          echo "No Python files in cake/ yet, skipping vulture"
+        fi
 
   validate-docs:
     runs-on: ubuntu-latest

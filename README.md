@@ -1,0 +1,98 @@
+# CAKE - Claude Autonomy Kit Engine
+
+[![CI Status](https://github.com/ZeroSumQuant/CAKE/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeroSumQuant/CAKE/actions/workflows/ci.yml)
+
+CAKE is a deterministic intervention system that monitors LLM operations, prevents known failure patterns, and enforces safety guardrails without human escalation.
+
+## 🎯 Overview
+
+CAKE acts as an autonomous "operator" that watches, intervenes, and recovers from errors in real-time. It's designed to achieve **zero-escalation autonomy** - resolving all failures without paging humans.
+
+## 🏗️ Architecture
+
+CAKE uses a single-process, component-based architecture:
+
+- **CakeController**: Central state machine orchestrator
+- **Operator**: Intervention message generator (matches Dustin's voice style)
+- **RecallDB**: Error pattern memory store
+- **PTYShim**: Command interceptor for safety
+- **Validator**: Error classifier
+- **Watchdog**: Stream monitor for error detection
+
+See [cake-architecture-v2.md](cake-architecture-v2.md) for detailed architecture documentation.
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.9+
+- Git
+
+### Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/ZeroSumQuant/CAKE.git
+cd CAKE
+```
+
+2. Create virtual environment:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+3. Install dependencies:
+```bash
+pip install -r requirements-dev.txt
+```
+
+4. Run quality checks:
+```bash
+./scripts/cake-lint.sh scripts/
+```
+
+## 🛠️ Development
+
+### Essential Scripts
+
+- **cake-lint.sh**: Comprehensive linting (black, isort, flake8, mypy, bandit, safety)
+- **cake-check-voice.py**: Validates Operator messages match intervention style
+- **cake-handoff.sh**: Auto-generates handoff documentation
+- **cake-stub-component.py**: Generates component code from specifications
+
+### Code Quality
+
+All code must pass strict quality checks:
+```bash
+./scripts/cake-lint.sh .              # Run all checks
+./scripts/cake-lint.sh . --check-only  # CI mode (no auto-fix)
+```
+
+### Testing
+
+```bash
+pytest tests/ -v --cov=cake
+```
+
+## 📚 Documentation
+
+- [CLAUDE.md](CLAUDE.md) - Project memory and guidelines
+- [cake-architecture-v2.md](cake-architecture-v2.md) - System architecture
+- [cake-components-v2.md](cake-components-v2.md) - Component specifications
+- [cake-testing-v2.md](cake-testing-v2.md) - Testing requirements
+- [cake-roadmap-v2.md](cake-roadmap-v2.md) - Development roadmap
+
+## 🤝 Contributing
+
+1. Create a feature branch
+2. Run `./scripts/cake-lint.sh` before committing
+3. Ensure all tests pass
+4. Submit a pull request
+
+## 📄 License
+
+[License information to be added]
+
+## 🙏 Acknowledgments
+
+Built with Claude Code assistance.
