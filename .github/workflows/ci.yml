@@ -1,0 +1,144 @@
+name: CAKE CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+    
+    - name: Run CAKE linting suite (check-only mode)
+      run: |
+        chmod +x scripts/cake-lint.sh
+        ./scripts/cake-lint.sh cake/ --check-only --verbose
+    
+    - name: Run CAKE script linting
+      run: |
+        ./scripts/cake-lint.sh scripts/ --check-only --verbose
+    
+    - name: Check voice consistency
+      run: |
+        chmod +x scripts/cake-check-voice.py
+        python scripts/cake-check-voice.py --message "Operator (CAKE): Stop. Run tests. See output."
+    
+    - name: Run tests
+      run: |
+        # When tests are added, uncomment:
+        # pytest tests/ -v --cov=cake --cov-report=term-missing --cov-report=xml
+        echo "Tests will be added in next phase"
+    
+    - name: Upload coverage reports
+      if: matrix.python-version == '3.11'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  security-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit safety
+    
+    - name: Run Bandit security check
+      run: |
+        bandit -r cake/ -ll -f json -o bandit-report.json || true
+        bandit -r cake/ -ll
+    
+    - name: Run Safety check
+      run: |
+        pip install -r requirements-dev.txt
+        safety check --json
+    
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install quality tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install pylint vulture
+    
+    - name: Run Pylint
+      run: |
+        pylint cake/ --exit-zero --output-format=json > pylint-report.json || true
+        echo "Pylint score:"
+        pylint cake/ --exit-zero | grep "Your code has been rated" || echo "No rating found"
+    
+    - name: Check for dead code
+      run: |
+        vulture cake/ --min-confidence 80 || true
+
+  validate-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check documentation
+      run: |
+        echo "Checking for required documentation files..."
+        for file in README.md CLAUDE.md cake-architecture-v2.md cake-components-v2.md; do
+          if [ ! -f "$file" ]; then
+            echo "ERROR: Required file $file is missing!"
+            exit 1
+          else
+            echo "✓ Found $file"
+          fi
+        done
+    
+    - name: Validate markdown
+      run: |
+        npm install -g markdownlint-cli
+        markdownlint '**/*.md' --ignore node_modules --ignore .venv || true
