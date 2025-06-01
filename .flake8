@@ -1,0 +1,60 @@
+[flake8]
+# CAKE Project Flake8 Configuration
+
+max-line-length = 100
+max-complexity = 10
+
+# Ignore codes
+ignore = 
+    # D100-D104: Missing docstrings (we'll be selective)
+    D100,D104,
+    # W503: Line break before binary operator (conflicts with black)
+    W503,
+    # E203: Whitespace before ':' (conflicts with black)
+    E203,
+    # B008: Do not perform function calls in argument defaults
+    B008,
+    # SIM106: Handle error cases first (sometimes less readable)
+    SIM106,
+    # ANN101: Missing type annotation for self (self should never be annotated)
+    ANN101
+
+# Per-file ignores
+per-file-ignores =
+    # Test files don't need docstrings
+    tests/*:D100,D101,D102,D103,D104
+    # Scripts can use print statements
+    scripts/*:T201
+    # __init__.py files don't need docstrings
+    */__init__.py:D104
+
+# Exclude directories
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    build,
+    dist,
+    *.egg-info,
+    .pytest_cache,
+    .mypy_cache,
+    htmlcov,
+    .coverage,
+    docs/_build
+
+# Plugin settings
+# flake8-docstrings
+docstring-convention = google
+
+# flake8-annotations
+suppress-none-returning = True
+
+# flake8-cognitive-complexity
+max-cognitive-complexity = 10
+
+# flake8-expression-complexity
+max-expression-complexity = 10
+
+# flake8-functions
+max-function-length = 50

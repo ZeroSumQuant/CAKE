@@ -1,0 +1,66 @@
+# CAKE Development Dependencies
+
+# Testing
+pytest>=7.4
+pytest-asyncio>=0.21
+pytest-cov>=4.1
+pytest-timeout>=2.2
+pytest-mock>=3.12
+pytest-xdist>=3.5  # parallel test execution
+hypothesis>=6.92   # property-based testing
+
+# Code Quality - Core
+black>=23.0
+isort>=5.13
+flake8>=7.0
+mypy>=1.8
+bandit[toml]>=1.7
+safety>=3.0
+
+# Code Quality - Extended
+pylint>=3.0
+vulture>=2.7
+radon>=6.0        # code complexity metrics
+xenon>=0.9        # monitor code complexity
+
+# Flake8 plugins for comprehensive checks
+flake8-docstrings>=1.7
+flake8-bugbear>=24.0
+flake8-comprehensions>=3.14
+flake8-simplify>=0.21
+flake8-pie>=0.16
+flake8-builtins>=2.2
+flake8-cognitive-complexity>=0.1
+flake8-expression-complexity>=0.0.11
+flake8-functions>=0.0.8
+flake8-annotations>=3.0
+flake8-type-checking>=2.5
+pep8-naming>=0.13
+
+# Documentation
+sphinx>=7.2
+sphinx-rtd-theme>=2.0
+sphinx-autodoc-typehints>=1.25
+myst-parser>=2.0  # markdown support for sphinx
+
+# Development tools
+ipython>=8.18
+ipdb>=0.13
+rich>=13.7        # better terminal output
+pre-commit>=3.6   # git hooks
+commitizen>=3.13  # conventional commits
+watchdog>=3.0     # file system monitoring
+
+# Performance profiling
+py-spy>=0.3
+memory-profiler>=0.61
+line-profiler>=4.1
+
+# Type stubs
+types-PyYAML>=6.0
+types-requests>=2.31
+
+# Build tools
+build>=1.0
+wheel>=0.42
+twine>=4.0
