@@ -187,13 +187,6 @@ CHANGED_FILES=$(git diff origin/main...HEAD --name-status 2>/dev/null || git dif
 FILES_COUNT=$(echo "$CHANGED_FILES" | wc -l | tr -d ' ')
 
 # Create PR body with full context
-# Check if full conversation was attached
-CONVERSATION_FULL=$(find "$PROJECT_ROOT/docs/handoff" -name "conversation-${TODAY}-*-full.md" -type f 2>/dev/null | head -1)
-CONVERSATION_LINK=""
-if [ -n "$CONVERSATION_FULL" ]; then
-    CONVERSATION_LINK="- **Full Conversation Log**: [View complete session]($(echo "$CONVERSATION_FULL" | sed "s|$PROJECT_ROOT/||"))"
-fi
-
 PR_BODY=$(cat <<EOF
 ## Summary
 This PR contains $COMMITS_COUNT commits affecting $FILES_COUNT files, developed through pair programming with Claude.
@@ -229,7 +222,15 @@ $CHANGED_FILES
 - **Handoff Document**: [$(basename "$HANDOFF_FILE")]($(echo "$HANDOFF_FILE" | sed "s|$PROJECT_ROOT/||"))
 - **Task Log**: [View updates]($(echo "$TASK_LOG" | sed "s|$PROJECT_ROOT/||"))
 - **Conversation Context**: [Structured data]($(echo "$CONTEXT_JSON" | sed "s|$PROJECT_ROOT/||"))
-$CONVERSATION_LINK
+EOD
+
+# Check if full conversation was attached
+CONVERSATION_FULL=$(find "$PROJECT_ROOT/docs/handoff" -name "conversation-${TODAY}-*-full.md" -type f 2>/dev/null | head -1)
+if [ -n "$CONVERSATION_FULL" ]; then
+    echo "- **Full Conversation Log**: [View complete session]($(echo "${CONVERSATION_FULL:-}" | sed "s|$PROJECT_ROOT/||"))" >> "$PR_DESCRIPTION_FILE"
+fi
+
+cat >> "$PR_DESCRIPTION_FILE" << EOD
 - **Lint Status**: All checks passed at $(date -r "$PROJECT_ROOT/.cake/lint-status" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown time")
 
 ## Review Notes
