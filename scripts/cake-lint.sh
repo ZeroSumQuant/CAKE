@@ -349,7 +349,7 @@ if [[ ! "$TARGET_PATH" =~ scripts ]]; then
     PRINT_COUNT=0
     while IFS= read -r -d '' file; do
         # Count print statements not in comments
-        count=$(grep "print(" "$file" 2>/dev/null | grep -v "#.*print(" | wc -l || echo "0")
+        count=$(grep "print(" "$file" 2>/dev/null | grep -v "#.*print(" | wc -l | tr -d ' ' || echo "0")
         ((PRINT_COUNT += count))
     done < <(find "$TARGET_PATH" -name "*.py" -type f -print0 2>/dev/null)
     
