@@ -46,6 +46,27 @@ print_error() {
 mkdir -p "$HANDOFF_DIR"
 [ ! -f "$TASK_LOG" ] && echo "# CAKE Task Log" > "$TASK_LOG"
 
+# Extract conversation context if available
+CONTEXT_JSON="$PROJECT_ROOT/.cake/conversation-context/conversation-${DATE}.json"
+CONVERSATION_CONTEXT=""
+if [ -x "$SCRIPT_DIR/cake-extract-context.sh" ]; then
+    print_status "Extracting conversation context..."
+    "$SCRIPT_DIR/cake-extract-context.sh" >/dev/null 2>&1 || true
+    
+    if [ -f "$CONTEXT_JSON" ]; then
+        CONVERSATION_CONTEXT="Available"
+        # Parse JSON to get key data
+        TASKS_DISCUSSED=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); print('\n'.join(['- ' + t for t in data.get('tasks_discussed', [])]))" 2>/dev/null || echo "")
+        DECISIONS_MADE=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); print('\n'.join(['- ' + d for d in data.get('decisions_made', [])]))" 2>/dev/null || echo "")
+        PROBLEMS_SOLVED=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); print('\n'.join(['- ' + p for p in data.get('problems_solved', [])]))" 2>/dev/null || echo "")
+        KEY_INSIGHTS=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); print('\n'.join(['- ' + i for i in data.get('key_insights', [])]))" 2>/dev/null || echo "")
+    else
+        CONVERSATION_CONTEXT="Not available"
+    fi
+else
+    CONVERSATION_CONTEXT="Extractor not found"
+fi
+
 # Gather information
 print_status "Gathering project status..."
 
@@ -103,7 +124,19 @@ Generated: $DATE at $TIME
 
 ## 📋 Today's Progress
 
-### Completed Tasks
+### Tasks Discussed in Conversation
+${TASKS_DISCUSSED:-"- No conversation context available"}
+
+### Decisions Made
+${DECISIONS_MADE:-"- No decisions captured"}
+
+### Problems Solved
+${PROBLEMS_SOLVED:-"- No problems recorded"}
+
+### Key Insights
+${KEY_INSIGHTS:-"- No insights captured"}
+
+### Completed Tasks (from git)
 $(git -C "$PROJECT_ROOT" log --since="$DATE 00:00" --pretty=format:"- %s" 2>/dev/null || echo "- No commits today yet")
 
 ### Files Modified Today
@@ -147,6 +180,13 @@ $(grep -r "TODO" "$PROJECT_ROOT" --include="*.py" --include="*.sh" --exclude-dir
 
 1. **If continuing current work**: Check uncommitted changes above
 2. **If starting new work**: Review cake-roadmap-v2.md for priorities
+
+## 📎 Attachments
+
+### Conversation Context
+- **Status**: $CONVERSATION_CONTEXT
+- **Full conversation log**: ${CONTEXT_JSON#$PROJECT_ROOT/}
+- **Raw conversation**: ${CONTEXT_JSON%.json}.raw
 3. **Before committing**: Run \`./scripts/cake-pre-commit.sh\`
 
 ---
@@ -158,22 +198,33 @@ print_success "Handoff document created: $HANDOFF_FILE"
 # Update task log
 print_status "Updating task log..."
 
-# Create task log entry
+# Create task log entry with conversation context
+TASK_SUMMARY="${TASKS_DISCUSSED:-"No specific tasks discussed"}"
+TASK_SUMMARY_BRIEF=$(echo "$TASK_SUMMARY" | head -3)  # First 3 tasks for brevity
+
 TASK_LOG_ENTRY="
 ## $DATE - Session $HANDOFF_COUNT
 
 **Time**: $TIME  
 **Branch**: $CURRENT_BRANCH  
 **Status**: $LINT_STATUS  
+**Context**: $CONVERSATION_CONTEXT
+
+### Session Summary
+${TASK_SUMMARY_BRIEF}
 
 ### Work Completed
 $(git -C "$PROJECT_ROOT" log --since="$DATE 00:00" --pretty=format:"- %s" 2>/dev/null || echo "- Session in progress")
 
+### Key Decisions
+${DECISIONS_MADE:-"- No major decisions recorded"}
+
 ### Files Modified
 $(git -C "$PROJECT_ROOT" diff --name-only --since="$DATE 00:00" 2>/dev/null | sed 's/^/- /' || echo "- No files modified yet")
 
-### Handoff Document
-[View handoff]($HANDOFF_FILE)
+### Documentation
+- **Handoff**: [View handoff]($HANDOFF_FILE)
+- **Conversation Log**: ${CONTEXT_JSON#$PROJECT_ROOT/}
 
 ---"
 

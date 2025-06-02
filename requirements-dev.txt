@@ -50,6 +50,7 @@ rich>=13.7        # better terminal output
 pre-commit>=3.6   # git hooks
 commitizen>=3.13  # conventional commits
 watchdog>=3.0     # file system monitoring
+claude-conversation-extractor>=1.0.0  # PR context extraction
 
 # Performance profiling
 py-spy>=0.3
