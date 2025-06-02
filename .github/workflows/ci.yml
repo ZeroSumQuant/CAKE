@@ -149,9 +149,19 @@ jobs:
     - name: Check documentation
       run: |
         echo "Checking for required documentation files..."
-        for file in README.md CLAUDE.md cake-architecture-v2.md cake-components-v2.md; do
+        for file in README.md CLAUDE.md; do
           if [ ! -f "$file" ]; then
             echo "ERROR: Required file $file is missing!"
+            exit 1
+          else
+            echo "✓ Found $file"
+          fi
+        done
+        
+        echo "Checking for specification documents..."
+        for file in docs/specifications/cake-architecture-v2.md docs/specifications/cake-components-v2.md docs/specifications/cake-done-checklist-v2.md docs/specifications/cake-roadmap-v2.md; do
+          if [ ! -f "$file" ]; then
+            echo "ERROR: Required specification file $file is missing!"
             exit 1
           else
             echo "✓ Found $file"
