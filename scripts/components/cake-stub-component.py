@@ -8,9 +8,7 @@ Usage:
     python cake-stub-component.py --component Operator
     python cake-stub-component.py --component RecallDB --output cake/components/recall_db.py
     python cake-stub-component.py --list
-"""
-
-import argparse
+"""import argparse
 import re
 import sys
 from pathlib import Path
@@ -19,7 +17,6 @@ from typing import Dict, List, Optional, Tuple
 
 class ComponentSpec:
     """Represents a component specification."""
-
     def __init__(
         self,
         name: str,
@@ -28,8 +25,7 @@ class ComponentSpec:
         attributes: List[Dict],
         requirements: List[str],
     ) -> None:
-        """Initialize component specification."""
-        self.name = name
+        """Initialize component specification."""self.name = name
         self.description = description
         self.methods = methods
         self.attributes = attributes
@@ -38,15 +34,12 @@ class ComponentSpec:
 
 class SpecificationParser:
     """Parses component specifications from markdown."""
-
     def __init__(self, spec_file: Path) -> None:
-        """Initialize specification parser."""
-        self.spec_file = spec_file
+        """Initialize specification parser."""self.spec_file = spec_file
         self.content = spec_file.read_text()
 
     def get_available_components(self) -> List[str]:
-        """Get list of components defined in spec."""
-        components = []
+        """Get list of components defined in spec."""components = []
 
         # Look for component sections
         pattern = r"### (\w+)\s*\n"
@@ -70,8 +63,7 @@ class SpecificationParser:
         return components
 
     def parse_component(self, component_name: str) -> Optional[ComponentSpec]:
-        """Parse specification for a specific component."""
-        section = self._find_component_section(component_name)
+        """Parse specification for a specific component."""section = self._find_component_section(component_name)
         if not section:
             return None
 
@@ -84,19 +76,16 @@ class SpecificationParser:
         )
 
     def _find_component_section(self, component_name: str) -> Optional[str]:
-        """Find component section in specification."""
-        pattern = rf"### {component_name}.*?\n(.*?)(?=###|\Z)"
+        """Find component section in specification."""pattern = rf"### {component_name}.*?\n(.*?)(?=###|\Z)"
         match = re.search(pattern, self.content, re.DOTALL | re.IGNORECASE)
         return match.group(1) if match else None
 
     def _extract_description(self, section: str) -> str:
-        """Extract component description from section."""
-        desc_match = re.search(r"^(.+?)(?=\n\*\*|$)", section.strip())
+        """Extract component description from section."""desc_match = re.search(r"^(.+?)(?=\n\*\*|$)", section.strip())
         return desc_match.group(1).strip() if desc_match else ""
 
     def _parse_methods(self, section: str) -> List[Dict]:
-        """Parse method specifications."""
-        methods = []
+        """Parse method specifications."""methods = []
 
         # Look for method definitions
         method_pattern = r"- `(\w+)\((.*?)\)`(?:\s*-\s*)?(.+?)(?=\n-|\n\n|\Z)"
@@ -118,8 +107,7 @@ class SpecificationParser:
         return methods
 
     def _parse_params(self, params_str: str) -> List[Tuple[str, str]]:
-        """Parse method parameters."""
-        if not params_str:
+        """Parse method parameters."""if not params_str:
             return []
 
         params = []
@@ -134,8 +122,7 @@ class SpecificationParser:
         return params
 
     def _parse_attributes(self, section: str) -> List[Dict]:
-        """Parse component attributes."""
-        attributes = []
+        """Parse component attributes."""attributes = []
 
         # Look for state/attribute definitions
         attr_pattern = r"(?:state|attribute)[:\s]+`(\w+)`\s*(?:-\s*)?(.+?)(?=\n|$)"
@@ -152,8 +139,7 @@ class SpecificationParser:
         return attributes
 
     def _parse_requirements(self, section: str) -> List[str]:
-        """Parse requirements/constraints."""
-        requirements = []
+        """Parse requirements/constraints."""requirements = []
 
         # Look for MUST requirements
         req_pattern = r"MUST\s+(.+?)(?=\n|$)"
@@ -164,8 +150,7 @@ class SpecificationParser:
         return requirements
 
     def _infer_return_type(self, method_name: str, description: str) -> str:
-        """Infer return type from method name and description."""
-        # Check method name patterns
+        """Infer return type from method name and description."""# Check method name patterns
         if method_name.startswith("is_") or method_name.startswith("has_"):
             return "bool"
 
@@ -185,10 +170,8 @@ class SpecificationParser:
 
 class ComponentGenerator:
     """Generates Python code from component specifications."""
-
     def __init__(self) -> None:
-        """Initialize component generator."""
-        self.imports = {
+        """Initialize component generator."""self.imports = {
             "from typing import Dict, List, Optional, Any, Tuple",
             "from dataclasses import dataclass",
             "import asyncio",
@@ -196,8 +179,7 @@ class ComponentGenerator:
         }
 
     def generate_component(self, spec: ComponentSpec) -> str:
-        """Generate Python code for a component."""
-        # Add component-specific imports
+        """Generate Python code for a component."""# Add component-specific imports
         self._add_component_imports(spec)
 
         # Build code sections
@@ -211,8 +193,7 @@ class ComponentGenerator:
         return "\n".join(code_parts)
 
     def _add_component_imports(self, spec: ComponentSpec) -> None:
-        """Add component-specific imports."""
-        if spec.name == "RecallDB":
+        """Add component-specific imports."""if spec.name == "RecallDB":
             self.imports.add("import sqlite3")
             self.imports.add("from datetime import datetime, timedelta")
         elif spec.name == "Watchdog":
@@ -224,8 +205,7 @@ class ComponentGenerator:
             self.imports.add("import subprocess")
 
     def _generate_header(self, spec: ComponentSpec) -> str:
-        """Generate file header with docstring."""
-        return f'''"""
+        """Generate file header with docstring."""return f'''"""
 CAKE {spec.name} Component
 
 {spec.description}
@@ -235,8 +215,7 @@ Generated from specifications in cake-components-v2.md
 """'''
 
     def _generate_class(self, spec: ComponentSpec) -> str:
-        """Generate class definition."""
-        lines = []
+        """Generate class definition."""lines = []
 
         lines.extend(self._generate_class_header(spec))
         lines.extend(self._generate_constructor(spec))
@@ -245,8 +224,7 @@ Generated from specifications in cake-components-v2.md
         return "\n".join(lines)
 
     def _generate_class_header(self, spec: ComponentSpec) -> List[str]:
-        """Generate class header with docstring."""
-        lines = [f"\nclass {spec.name}:", f'    """{spec.description}']
+        """Generate class header with docstring."""lines = [f"\nclass {spec.name}:", f'    """{spec.description}']
 
         if spec.requirements:
             lines.extend(
@@ -257,8 +235,7 @@ Generated from specifications in cake-components-v2.md
         return lines
 
     def _generate_constructor(self, spec: ComponentSpec) -> List[str]:
-        """Generate constructor method."""
-        lines = [
+        """Generate constructor method."""lines = [
             "    def __init__(self, config: Dict[str, Any]):",
             '        """Initialize component with configuration."""',
             "        self.config = config",
@@ -275,16 +252,14 @@ Generated from specifications in cake-components-v2.md
         return lines
 
     def _generate_methods(self, spec: ComponentSpec) -> List[str]:
-        """Generate all methods for the component."""
-        lines = []
+        """Generate all methods for the component."""lines = []
         for method in spec.methods:
             lines.extend(self._generate_method(method))
             lines.append("")
         return lines
 
     def _generate_method(self, method: Dict) -> List[str]:
-        """Generate method definition."""
-        lines = []
+        """Generate method definition."""lines = []
 
         lines.extend(self._generate_method_signature(method))
         lines.extend(self._generate_method_docstring(method))
@@ -293,8 +268,7 @@ Generated from specifications in cake-components-v2.md
         return lines
 
     def _generate_method_signature(self, method: Dict) -> List[str]:
-        """Generate method signature."""
-        params = ["self"]
+        """Generate method signature."""params = ["self"]
         for param_name, param_type in method["params"]:
             params.append(f"{param_name}: {param_type}")
 
@@ -302,8 +276,7 @@ Generated from specifications in cake-components-v2.md
         return [f'    def {method["name"]}({", ".join(params)}) -> {return_type}:']
 
     def _generate_method_docstring(self, method: Dict) -> List[str]:
-        """Generate method docstring."""
-        lines = [f'        """{method["description"]}']
+        """Generate method docstring."""lines = [f'        """{method["description"]}']
 
         if method["params"]:
             lines.extend(
@@ -330,8 +303,7 @@ Generated from specifications in cake-components-v2.md
         return lines
 
     def _generate_method_body(self, method: Dict) -> List[str]:
-        """Generate method body."""
-        return [
+        """Generate method body."""return [
             "        # TODO: Implement this method",
             "        raise NotImplementedError(",
             f'            "{method["name"]} not yet implemented"',
@@ -340,8 +312,7 @@ Generated from specifications in cake-components-v2.md
 
 
 def _create_argument_parser() -> argparse.ArgumentParser:
-    """Create and return the argument parser."""
-    parser = argparse.ArgumentParser(
+    """Create and return the argument parser."""parser = argparse.ArgumentParser(
         description="Generate CAKE component code from specifications",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -377,8 +348,7 @@ component code with all required methods, attributes, and documentation.
 
 
 def _list_components(parser_obj: SpecificationParser) -> None:
-    """List available components."""
-    print("Available CAKE Components:")
+    """List available components."""print("Available CAKE Components:")
     print("-" * 30)
     components = parser_obj.get_available_components()
     for comp in components:
@@ -386,8 +356,7 @@ def _list_components(parser_obj: SpecificationParser) -> None:
 
 
 def _generate_output_path(spec: ComponentSpec, output_arg: Optional[Path]) -> Path:
-    """Generate output path for component."""
-    if output_arg:
+    """Generate output path for component."""if output_arg:
         return output_arg
 
     # Convert component name to snake_case
@@ -396,8 +365,7 @@ def _generate_output_path(spec: ComponentSpec, output_arg: Optional[Path]) -> Pa
 
 
 def _write_component_file(output_path: Path, code: str, force: bool) -> int:
-    """Write component code to file."""
-    # Check if file exists
+    """Write component code to file."""# Check if file exists
     if output_path.exists() and not force:
         print(f"Error: File already exists: {output_path}")
         print("Use --force to overwrite")
@@ -413,8 +381,7 @@ def _write_component_file(output_path: Path, code: str, force: bool) -> int:
 
 
 def _process_component_generation(args: argparse.Namespace, parser_obj: SpecificationParser) -> int:
-    """Process component generation request."""
-    # Parse component specification
+    """Process component generation request."""# Parse component specification
     print(f"Parsing specification for {args.component}...")
     spec = parser_obj.parse_component(args.component)
 

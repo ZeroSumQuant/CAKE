@@ -1,357 +1,290 @@
-# CAKE Enhanced Architecture - Complete Integration Guide
+#!/usr/bin/env python3
+"""cake_controller.py - Main orchestrator for CAKE system
 
-## 🎯 Overview
+Central controller that manages TRRDEVS workflow execution,
+coordinates components, and ensures autonomous operation.
 
-This document shows how to integrate the new autonomous components into the existing CAKE system, transforming it from a linear loop executor into a truly autonomous development agent.
+Author: CAKE Team
+License: MIT
+Python: 3.11+
+"""
 
-## 📁 File Organization
+import asyncio
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum, auto
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-```
-cake/
-├── core/                      # Existing core components
-│   ├── cake_controller.py      # Main orchestrator (to be enhanced)
-│   ├── rule_engine.py         # Existing rule engine
-│   ├── failure_logger.py      # Existing failure logger
-│   ├── claude_client.py       # Claude API client
-│   └── security.py            # Security and sandboxing
-│
-├── autonomy/                  # NEW autonomous components
-│   ├── strategist.py          # Strategic decision engine
-│   ├── stage_router.py        # Dynamic stage navigation
-│   ├── rule_creator.py        # Intelligent rule generation
-│   └── info_fetcher.py        # Documentation retrieval
-│
-├── config/                    # Configuration files
-│   ├── policy_rules.yaml      # NEW strategic policies
-│   ├── domains/               # Domain configurations
-│   └── constitutions/         # User preferences
-│
-└── integrations/              # Future additions
-    └── toolchain_runner.py    # GitHub, CI/CD, cloud APIs
-```
+from cake.components.operator import OperatorBuilder
+from cake.components.recall_db import RecallDB
+from cake.components.snapshot_manager import SnapshotManager
+from cake.components.validator import TaskConvergenceValidator
 
-## 🔧 Integration Steps
+# Core imports
+from cake.core.pty_shim import PTYShim
+from cake.core.stage_router import StageRouter
+from cake.core.watchdog import Watchdog
+from cake.utils.cross_task_knowledge_ledger import CrossTaskKnowledgeLedger
+from cake.utils.models import Constitution
+from cake.utils.rate_limiter import RateLimiter
 
-### Step 1: Update `cake_controller.py`
+logger = logging.getLogger(__name__)
 
-Add these imports and modifications to the existing controller:
 
-```python
-# New imports at the top
-from autonomy.strategist import Strategist, Decision, StrategyDecision
-from autonomy.stage_router import StageRouter
-from autonomy.rule_creator import RuleCreator
-from autonomy.info_fetcher import InfoFetcher
+class TaskStatus(Enum):
+    """Task execution status."""
 
-class CakController:
-    def __init__(self, constitution: Constitution, task_description: str):
-        # ... existing init code ...
-        
-        # Add new components
-        self.strategist = Strategist(Path("config/policy_rules.yaml"))
-        self.router = StageRouter(self.STAGES)
-        self.rule_creator = RuleCreator(self.claude_client)
-        self.info_fetcher = InfoFetcher(Path("cache/info"))
-        
-    async def run_stage(self, stage: str) -> bool:
-        """Enhanced stage execution with strategic decisions"""
-        # Get current state for decision making
-        state = self.get_current_state()
-        
-        # Ask strategist for decision
-        decision = self.strategist.decide(state)
-        
-        # Handle special decisions before normal execution
-        if decision.action == Decision.ABORT:
-            logger.error(f"Aborting: {decision.reason}")
-            return False
-            
-        elif decision.action == Decision.ESCALATE:
-            await self.escalate_to_human(decision)
-            return False
-            
-        elif decision.action == Decision.FETCH_INFO:
-            info = await self.info_fetcher.search(
-                decision.metadata.get('query', state['error'])
-            )
-            # Inject info into context for next Claude call
-            self.state.stage_outputs['fetched_info'] = info
-            
-        elif decision.action == Decision.CREATE_RULE:
-            proposal = await self.rule_creator.propose_rule(
-                stage, state['error'], state
-            )
-            if proposal:
-                self.rule_engine.create_rule(
-                    proposal.signature,
-                    stage,
-                    state['error'],
-                    proposal.fix_command
-                )
-        
-        # Continue with normal or rerouted execution
-        if decision.action == Decision.PROCEED:
-            return await self.execute_stage_normally(stage)
-        else:
-            # Use router for navigation
-            next_stage = self.router.next_stage(stage, decision)
-            if next_stage:
-                self.state.current_stage = next_stage
-                return True
-            return False
-    
-    def get_current_state(self) -> Dict[str, Any]:
-        """Gather complete state for strategic decisions"""
+    INITIALIZING = auto()
+    IN_PROGRESS = auto()
+    COMPLETED = auto()
+    FAILED = auto()
+    ABORTED = auto()
+
+
+@dataclass
+class TaskContext:
+    """Context for task execution."""
+
+    task_id: str
+    description: str
+    constitution: Constitution
+    start_time: datetime = field(default_factory=datetime.now)
+    current_stage: str = "think"
+    status: TaskStatus = TaskStatus.INITIALIZING
+    stage_outputs: Dict[str, Any] = field(default_factory=dict)
+    errors: List[Dict[str, Any]] = field(default_factory=list)
+    interventions: List[str] = field(default_factory=list)
+    task_metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class CakeController:
+    """
+    Main CAKE orchestrator that manages autonomous task execution.
+
+    Coordinates all components to provide intervention-free operation
+    following TRRDEVS methodology.
+    """
+
+    def __init__(self, config_path: Path):
+        """
+        Initialize CAKE controller.
+
+        Args:
+            config_path: Path to configuration directory
+        """
+        self.config_path = config_path
+        self.config = self._load_config()
+
+        # Initialize components
+        self._init_components()
+
+        # Task tracking
+        self.active_tasks: Dict[str, TaskContext] = {}
+
+        logger.info("CakeController initialized")
+
+    def _load_config(self) -> Dict[str, Any]:
+        """Load configuration from file."""
+        config_file = self.config_path / "cake_config.yaml"
+        if config_file.exists():
+            import yaml
+
+            with open(config_file) as f:
+                return yaml.safe_load(f)
+        return self._default_config()
+
+    def _default_config(self) -> Dict[str, Any]:
+        """Default configuration."""
         return {
-            'stage': self.state.current_stage,
-            'failure_count': self.state.fail_counts.get(self.state.current_stage, 0),
-            'cost': self.state.total_cost_usd,
-            'budget': self.state.cost_budget,
-            'tokens': self.state.total_tokens,
-            'token_limit': self.state.token_budget,
-            'error': self.state.stage_errors.get(self.state.current_stage, ''),
-            'task': self.task_description,
-            'domain': self.state.active_domain.value,
-            'stage_outputs': self.state.stage_outputs,
-            'oscillation_count': self.detect_oscillation_count()
+            "max_stage_iterations": 3,
+            "timeout_minutes": 120,
+            "auto_retry": True,
+            "strict_mode": True,
+            "min_coverage": 90,
+            "enable_snapshots": True,
         }
-```
 
-### Step 2: Enhanced Error Handling
+    def _init_components(self):
+        """Initialize all CAKE components."""  # Core components
+        self.stage_router = StageRouter()
+        self.operator = OperatorBuilder()
+        self.recall_db = RecallDB(self.config_path / "recall.db")
+        self.validator = TaskConvergenceValidator()
+        self.knowledge_ledger = CrossTaskKnowledgeLedger(self.config_path / "knowledge.db")
 
-Replace the simple retry logic with strategic error handling:
+        # Rate limiter for Claude API
+        self.rate_limiter = RateLimiter()
 
-```python
-async def handle_failure(self, stage: str, error: str) -> bool:
-    """Strategic failure handling"""
-    # Update state
-    self.state.stage_errors[stage] = error
-    self.state.fail_counts[stage] = self.state.fail_counts.get(stage, 0) + 1
-    
-    # Get strategic decision
-    state = self.get_current_state()
-    decision = self.strategist.decide(state)
-    
-    # Try rule engine first (existing logic)
-    rule = self.rule_engine.check_rules(stage, error)
-    if rule and decision.action != Decision.ESCALATE:
-        success, output = self.rule_engine.apply_rule(rule)
-        if success:
-            return True
-    
-    # Follow strategic decision
-    if decision.action == Decision.RETRY:
-        logger.info(f"Strategic retry for {stage}")
-        return True
-        
-    elif decision.action == Decision.REROUTE:
-        logger.info(f"Strategic reroute to {decision.target_stage}")
-        self.state.current_stage = decision.target_stage
-        self.state.stage_index = self.STAGES.index(decision.target_stage)
-        return True
-        
-    elif decision.action == Decision.ESCALATE:
-        await self.escalate_to_human(decision)
-        return False
-        
-    elif decision.action == Decision.FETCH_INFO:
-        # Fetch info and retry with context
-        info = await self.info_fetcher.search(error)
-        self.state.stage_outputs['error_info'] = info
-        return True
-        
-    return False
-```
+        # Initialize core components
+        self.watchdog = Watchdog()
+        self.pty_shim = PTYShim()
+        self.snapshot_manager = SnapshotManager()
 
-### Step 3: Add Navigation Intelligence
+    async def start_task(self, task_description: str, constitution: Constitution) -> str:
+        """
+        Start a new autonomous task.
 
-Update the main loop to use the router:
+        Args:
+            task_description: What to accomplish
+            constitution: User preferences and constraints
 
-```python
-async def run(self) -> bool:
-    """Main TRRDEVS loop with intelligent navigation"""
-    logger.info(f"Starting autonomous CAKE for: {self.task_description}")
-    
-    # Set initial stage
-    self.router.set_current_stage(self.STAGES[0])
-    
-    while self.state.current_stage:
-        stage = self.state.current_stage
-        
-        # Check if we can skip this stage
-        if self.can_skip_stage(stage):
-            logger.info(f"Skipping {stage} based on policy")
-            decision = StrategyDecision(
-                action=Decision.PROCEED,
-                reason="Stage skip optimization"
+        Returns:
+            Task ID for tracking
+        """
+        # Generate task ID
+        task_id = f"task_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Create task context
+        context = TaskContext(
+            task_id=task_id, description=task_description, constitution=constitution
+        )
+
+        # Store active task
+        self.active_tasks[task_id] = context
+
+        # Start execution
+        asyncio.create_task(self._execute_task(context))
+
+        logger.info(f"Started task {task_id}: {task_description}")
+        return task_id
+
+    async def _execute_task(self, context: TaskContext):
+        """Execute task through TRRDEVS stages."""
+        try:
+            context.status = TaskStatus.IN_PROGRESS
+
+            # Execute stages
+            stages = [
+                "think",
+                "research",
+                "reflect",
+                "decide",
+                "execute",
+                "validate",
+                "solidify",
+            ]
+
+            for stage in stages:
+                context.current_stage = stage
+
+                # Check for intervention needs
+                intervention = await self._check_intervention_needed(context, stage)
+                if intervention:
+                    context.interventions.append(intervention)
+                    logger.warning(f"Intervention: {intervention}")
+
+                # Execute stage
+                result = await self._execute_stage(context, stage)
+
+                # Store output
+                context.stage_outputs[stage] = result
+
+                # Check if we should continue
+                if not await self._should_continue(context, stage, result):
+                    break
+
+            # Validate final result
+            if await self._validate_completion(context):
+                context.status = TaskStatus.COMPLETED
+            else:
+                context.status = TaskStatus.FAILED
+
+        except Exception as e:
+            logger.error(f"Task {context.task_id} failed: {e}")
+            context.status = TaskStatus.FAILED
+            context.errors.append(
+                {
+                    "stage": context.current_stage,
+                    "error": str(e),
+                    "timestamp": datetime.now(),
+                }
             )
-            self.state.current_stage = self.router.next_stage(stage, decision)
-            continue
-        
-        # Execute stage
-        success = await self.run_stage(stage)
-        
-        if success:
-            # Normal progression
-            decision = StrategyDecision(action=Decision.PROCEED)
-            self.state.current_stage = self.router.next_stage(stage, decision)
-        else:
-            # Failure already handled by run_stage
-            if not self.state.current_stage:  # Aborted
-                break
-    
-    # Analyze the journey
-    analysis = self.router.get_transition_analysis()
-    logger.info(f"Journey complete. Analysis: {analysis}")
-    
-    return self.state.current_stage == 'solidify' or self.router.stage_status['solidify'] == StageStatus.COMPLETED
-```
 
-### Step 4: Add Escalation Handler
+    async def _check_intervention_needed(self, context: TaskContext, stage: str) -> Optional[str]:
+        """Check if operator intervention is needed."""  # Check recall DB for repeat errors
+        if context.errors:
+            last_error = context.errors[-1]
+            if self.recall_db.is_repeat_error(last_error["error"]):
+                return self.operator.build_repeat_error_message(last_error["error"])
 
-```python
-async def escalate_to_human(self, decision: StrategyDecision):
-    """Handle human escalation with context"""
-    # Generate escalation message
-    template = self.get_escalation_template(decision)
-    message = template.format(
-        stage=self.state.current_stage,
-        failure_count=self.state.fail_counts.get(self.state.current_stage, 0),
-        error=self.state.stage_errors.get(self.state.current_stage, 'Unknown'),
-        cost=self.state.total_cost_usd,
-        suggestion=decision.metadata.get('suggested_message', 'Check logs')
-    )
-    
-    # Log escalation
-    logger.critical(f"HUMAN ESCALATION:\n{message}")
-    
-    # Save state for resumption
-    self.save_checkpoint()
-    
-    # Could integrate with Slack, email, etc.
-    if self.escalation_handler:
-        await self.escalation_handler.send(message)
-```
+        # Check stage-specific issues
+        if stage == "validate" and not context.stage_outputs.get("execute"):
+            return self.operator.build_message({"type": "TEST_SKIP", "context": "No tests written"})
 
-## 🚀 Usage Examples
+        return None
 
-### Basic Autonomous Execution
-
-```python
-# Create constitution with preferences
-constitution = Constitution(
-    base_identity={
-        'name': 'Senior Developer',
-        'risk_tolerance': 'balanced',
-        'principles': ['Quality', 'Performance', 'Security']
-    },
-    domain_overrides={
-        'software_development': {
-            'quality_gates': {'test_coverage': 85}
+    async def _execute_stage(self, context: TaskContext, stage: str) -> Dict[str, Any]:
+        """Execute a single TRRDEVS stage."""  # This would integrate with Claude
+        # For now, return mock result
+        return {
+            "stage": stage,
+            "status": "completed",
+            "output": f"Mock output for {stage}",
+            "timestamp": datetime.now(),
         }
-    }
-)
 
-# Create autonomous controller
-controller = CakController(
-    constitution=constitution,
-    task_description="Add user authentication to REST API"
-)
+    async def _should_continue(
+        self, context: TaskContext, stage: str, result: Dict[str, Any]
+    ) -> bool:
+        """Determine if we should continue to next stage."""  # Check for failures
+        if result.get("status") == "failed":
+            return False
 
-# Run autonomously
-success = await controller.run()
-```
+        # Check for abort conditions
+        if len(context.errors) > self.config["max_stage_iterations"]:
+            logger.error(f"Too many errors in task {context.task_id}")
+            return False
 
-### Domain-Specific Execution
+        # Check timeout
+        elapsed = (datetime.now() - context.start_time).total_seconds()
+        if elapsed > self.config["timeout_minutes"] * 60:
+            logger.error(f"Task {context.task_id} timed out")
+            return False
 
-```python
-# Switch to data science domain
-controller.switch_domain(Domain.DATA_SCIENCE)
+        return True
 
-# Run with different policies
-success = await controller.run()
-```
+    async def _validate_completion(self, context: TaskContext) -> bool:
+        """Validate task completed successfully."""
+        return self.validator.validate_task_convergence(context.stage_outputs, context.description)
 
-### Custom Policy Override
+    def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Get current status of a task."""
+        if task_id not in self.active_tasks:
+            return None
 
-```python
-# Load custom policy for specific task
-custom_policy = Path("config/high_risk_trading_policy.yaml")
-controller.strategist = Strategist(custom_policy)
+        context = self.active_tasks[task_id]
+        return {
+            "task_id": task_id,
+            "status": context.status.name,
+            "current_stage": context.current_stage,
+            "interventions": len(context.interventions),
+            "errors": len(context.errors),
+            "elapsed_minutes": (datetime.now() - context.start_time).total_seconds() / 60,
+        }
 
-# Run with stricter controls
-success = await controller.run()
-```
+    async def abort_task(self, task_id: str) -> bool:
+        """Abort a running task."""
+        if task_id not in self.active_tasks:
+            return False
 
-## 🔍 Monitoring and Debugging
+        context = self.active_tasks[task_id]
+        context.status = TaskStatus.ABORTED
 
-### Real-time Decision Tracking
+        logger.info(f"Aborted task {task_id}")
+        return True
 
-```python
-# Get decision history
-decisions = controller.strategist.get_decision_history(last_n=10)
-for decision in decisions:
-    print(f"{decision['timestamp']}: {decision['decision']['action']} - {decision['decision']['reason']}")
+    async def cleanup(self):
+        """Clean up resources."""
+        # Clean old tasks
+        cutoff = datetime.now() - timedelta(hours=24)
+        old_tasks = [tid for tid, ctx in self.active_tasks.items() if ctx.start_time < cutoff]
 
-# Get router analysis
-analysis = controller.router.get_transition_analysis()
-print(f"Bottlenecks: {analysis['bottleneck_stages']}")
-print(f"Average path length: {analysis['average_path_length']}")
-```
+        for task_id in old_tasks:
+            del self.active_tasks[task_id]
 
-### Rule Learning Analytics
+        # Clean recall DB
+        self.recall_db.cleanup_old_entries()
 
-```python
-# Check what rules are being created
-stats = controller.rule_creator.get_proposal_statistics()
-print(f"Total proposals: {stats['total_proposals']}")
-print(f"Average confidence: {stats['average_confidence']:.2f}")
-print(f"Common patterns: {stats['common_patterns']}")
-```
-
-## 🛡️ Safety Features
-
-1. **Decision Auditing**: Every strategic decision is logged with full context
-2. **Policy Validation**: YAML policies are validated before use
-3. **Escalation Templates**: Structured messages for human intervention
-4. **Resource Guards**: Automatic abort on budget/token overrun
-5. **Rule Validation**: All auto-generated rules go through safety checks
-
-## 📊 Performance Benefits
-
-- **Reduced Human Interrupts**: 80%+ reduction through smart rerouting
-- **Faster Error Recovery**: Pattern matching finds fixes in seconds
-- **Learning Efficiency**: Each failure makes the system smarter
-- **Optimal Paths**: Skip unnecessary stages for simple tasks
-
-## 🎯 Next Steps
-
-1. **Implement Toolchain Runner**: Add GitHub, CI/CD integrations
-2. **Add Telemetry**: Send anonymous metrics for improvement
-3. **Create UI Dashboard**: Web interface for monitoring
-4. **Build Rule Marketplace**: Share learned rules across teams
-5. **Add Multi-Agent Mode**: Parallel execution for complex tasks
-
-## 🏆 Success Metrics
-
-Track these KPIs to measure autonomy success:
-
-- **Autonomy Rate**: % of tasks completed without escalation
-- **Mean Time to Resolution**: Average time from start to solidify
-- **Rule Effectiveness**: Success rate of applied rules
-- **Cost Efficiency**: Average cost per completed task
-- **Learning Velocity**: New rules created per week
-
----
-
-## Summary
-
-This enhanced architecture transforms CAKE from a sophisticated loop runner into a truly autonomous agent that:
-
-1. **Makes strategic decisions** about workflow control
-2. **Learns from failures** and creates rules automatically
-3. **Fetches information** when needed without asking humans
-4. **Routes intelligently** through stages based on context
-5. **Escalates thoughtfully** only when truly necessary
-
-The modular design ensures each component can be tested, improved, and even replaced independently while maintaining the overall system integrity.
+        logger.info(f"Cleaned up {len(old_tasks)} old tasks")

@@ -14,21 +14,22 @@ import asyncio
 import json
 import logging
 import sys
-from pathlib import Path
-from typing import Dict, Any, Optional, List
 from datetime import datetime
+
+# Import new intervention components
+from operator import InterventionAnalyzer, OperatorBuilder
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from cak_adapter import CAKAdapter, create_cak_system
 
 # Import existing CAK components
 from cak_controller import CakController
-from strategist import Strategist
-from stage_router import StageRouter
-from rule_creator import RuleCreator
 from info_fetcher import InfoFetcher
-
-# Import new intervention components
-from operator import OperatorBuilder, InterventionAnalyzer
 from recall_db import RecallDB
-from cak_adapter import CAKAdapter, create_cak_system
+from rule_creator import RuleCreator
+from stage_router import StageRouter
+from strategist import Strategist
 
 logger = logging.getLogger(__name__)
 

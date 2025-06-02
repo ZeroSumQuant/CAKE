@@ -12,33 +12,39 @@ Python: 3.11+
 
 import asyncio
 import json
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
-import tempfile
 
 import pytest
 import pytest_asyncio
-from hypothesis import given, strategies as st, settings
-from hypothesis.stateful import RuleBasedStateMachine, rule, invariant
-from freezegun import freeze_time
-from factory import Factory, Faker, SubFactory
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 import redis.asyncio as redis
-from sqlmodel import SQLModel
-
-from cak.models import (
-    TaskRun, Constitution, StageExecution, StrategicDecision,
-    AutomationRule, ErrorPattern, KnowledgeEntry,
-    StageStatus, DecisionType
-)
-from cak.persistence import PersistenceLayer, DatabaseConfig, TaskRunRepository
 from cak.api import CAKService, create_app
+from cak.models import (
+    AutomationRule,
+    Constitution,
+    DecisionType,
+    ErrorPattern,
+    KnowledgeEntry,
+    StageExecution,
+    StageStatus,
+    StrategicDecision,
+    TaskRun,
+)
+from cak.persistence import DatabaseConfig, PersistenceLayer, TaskRunRepository
 from cak.rate_limiter import RateLimiter, RateLimitExceeded
-from cak.strategist import Strategist, Decision, StrategyDecision
+from cak.rule_creator import RuleCreator, RuleProposal, RuleValidator
 from cak.stage_router import StageRouter, StageTransition
-from cak.rule_creator import RuleCreator, RuleValidator, RuleProposal
+from cak.strategist import Decision, Strategist, StrategyDecision
+from factory import Factory, Faker, SubFactory
+from freezegun import freeze_time
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlmodel import SQLModel
 
 
 # Test Fixtures and Factories
@@ -489,8 +495,8 @@ class TestAPIIntegration:
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
         """Test health check endpoint."""
-        from fastapi.testclient import TestClient
         from cak.api import app
+        from fastapi.testclient import TestClient
         
         with TestClient(app) as client:
             response = client.get("/health")

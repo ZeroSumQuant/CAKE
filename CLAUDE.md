@@ -1,5 +1,19 @@
 # CAKE (Claude Autonomy Kit Engine) Development Assistant Memory
 
+## 🚨 MANDATORY FIRST STEP - START WATCHDOG 🚨
+**BEFORE ANYTHING ELSE, YOU MUST:**
+```bash
+cd /Users/dustinkirby/Documents/GitHub/CAKE
+./start_watchdog.sh
+```
+
+**This starts the Claude Watchdog that will:**
+- Monitor for common mistakes in real-time
+- Create CLAUDE_STOP.txt intervention files when you err
+- Help prevent repeated errors with hidden files, script execution, etc.
+
+**DO NOT PROCEED WITHOUT STARTING THE WATCHDOG!**
+
 ## Project Overview
 CAKE is a deterministic intervention system that monitors LLM operations, prevents known failure patterns, and enforces safety guardrails without human escalation. It acts as an autonomous "operator" that clones Dustin's intervention style to supervise any LLM.
 
@@ -26,11 +40,14 @@ CAKE is a deterministic intervention system that monitors LLM operations, preven
 - **Watchdog**: Stream monitor for error detection
 
 ## Development Workflow
-1. **Start each session with**:
+1. **Start each session with (IN THIS EXACT ORDER)**:
    ```bash
    cd /Users/dustinkirby/Documents/GitHub/CAKE
+   ./start_watchdog.sh  # MANDATORY - DO NOT SKIP!
    pwd && git status && git branch -a
    ```
+   
+   **⚠️ CRITICAL: The watchdog MUST be running before any other work!**
 
 2. **Before ANY implementation**:
    - Review the appropriate implementation guide in project root
@@ -135,6 +152,24 @@ Review `cake-scripts-suite.md` for helper scripts:
 - ≥90% voice similarity
 - ALL performance benchmarks met
 - 100% of dangerous commands blocked
+
+## Real-Time Self-Monitoring (CRITICAL)
+Before EVERY action, check these patterns:
+
+### 🚨 STOP Patterns
+1. **Using LS tool?** → STOP! Use `ls -la` with Bash tool (LS doesn't show hidden files)
+2. **Running a script?** → STOP! Check with `file <script>` first
+3. **Can't find .venv?** → STOP! Use `find . -name 'activate' -type f`
+4. **Fixing syntax errors?** → STOP! Collect ALL errors first, fix in ONE script
+5. **Using relative cd?** → STOP! Use absolute paths or check `pwd` first
+
+### ✅ Always Start With
+```bash
+pwd && ls -la && which python3
+find . -name 'activate' -type f 2>/dev/null
+```
+
+See CLAUDE_INTERVENTIONS.md for detailed intervention patterns.
 
 ---
 Remember: CAKE's goal is complete autonomy. Every decision should support the vision of an LLM that never needs human intervention.

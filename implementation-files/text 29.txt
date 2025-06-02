@@ -10,20 +10,20 @@ License: MIT
 Python: 3.11+
 """
 
+import fcntl
+import logging
 import os
 import pty
+import re
 import select
+import signal
 import subprocess
 import sys
 import termios
 import tty
-import fcntl
-import signal
-import re
-from typing import List, Optional, Tuple, Callable, Any
 from dataclasses import dataclass
 from datetime import datetime
-import logging
+from typing import Any, Callable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -381,8 +381,9 @@ def cak_exec(command: List[str], cak_adapter=None) -> subprocess.CompletedProces
 # Example usage
 if __name__ == "__main__":
     import tempfile
+
     from cak_adapter import create_cak_system
-    
+
     # Set up logging
     logging.basicConfig(level=logging.INFO)
     

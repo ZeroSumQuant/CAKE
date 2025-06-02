@@ -21,6 +21,18 @@ CAKE uses a single-process, component-based architecture:
 
 See [cake-architecture-v2.md](cake-architecture-v2.md) for detailed architecture documentation.
 
+## 🧪 Testing with Bad Claude
+
+CAKE includes a comprehensive testing framework called "Bad Claude Simulator" that intentionally makes mistakes to validate our safety systems. Bad Claude helps test:
+
+- Dangerous command blocking
+- Repeat error detection
+- CI/CD safety violations
+- Anti-pattern recognition
+- And much more!
+
+See [tests/bad_claude_simulator/](tests/bad_claude_simulator/) for the mischievous testing framework.
+
 ## 🚀 Quick Start
 
 ### Prerequisites

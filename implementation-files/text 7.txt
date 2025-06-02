@@ -11,17 +11,17 @@ License: MIT
 Python: 3.11+
 """
 
-import re
+import asyncio
+import difflib
+import hashlib
 import json
 import logging
-import asyncio
-from typing import Dict, List, Optional, Any, Tuple, Set
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from enum import Enum, auto
-import hashlib
-import difflib
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Configure module logger
 logger = logging.getLogger(__name__)

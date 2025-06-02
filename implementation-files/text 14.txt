@@ -10,24 +10,24 @@ License: MIT
 Python: 3.11+
 """
 
-import time
-from typing import Optional, Dict, Any, Callable
-from datetime import datetime, timedelta
 import functools
+import time
 from contextlib import contextmanager
+from datetime import datetime, timedelta
+from typing import Any, Callable, Dict, Optional
 
 import redis.asyncio as redis
 import structlog
-from opentelemetry import trace, metrics
+from opentelemetry import metrics, trace
 from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.exporter.prometheus import PrometheusMetricReader
-from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Gauge, Histogram
 
 logger = structlog.get_logger()
 

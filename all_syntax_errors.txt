@@ -1,0 +1,16 @@
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/adapters/cake_adapter.py:236:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/adapters/claude_orchestration.py:768:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/components/adaptive_confidence_engine.py:184:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/components/recall_db.py:81:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/components/semantic_error_classifier.py:337:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/components/snapshot_manager.py:135:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/components/validator.py:320:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/components/voice_similarity_gate.py:152:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/core/stage_router.py:365:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/core/trrdevs_engine.py:77:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/core/watchdog.py:90:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/utils/cross_task_knowledge_ledger.py:199:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/utils/info_fetcher.py:444:13: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/utils/rate_limiter.py:283:9: E999 SyntaxError: invalid syntax
+/Users/dustinkirby/Documents/GitHub/CAKE/cake/utils/rule_creator.py:130:13: E999 SyntaxError: invalid syntax
+15    E999 SyntaxError: invalid syntax

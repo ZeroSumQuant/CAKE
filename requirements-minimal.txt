@@ -1,0 +1,6 @@
+# Minimal requirements for working CAKE components
+pyyaml>=6.0
+
+# Note: Some imports in the code are actually optional:
+# - argparse, ast, contextlib, difflib, threading, types are all stdlib
+# - bcrypt, fastapi, jwt are only in example/test code, not core functionality

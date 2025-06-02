@@ -11,19 +11,20 @@ License: MIT
 Python: 3.11+
 """
 
-import re
-import json
-import logging
 import asyncio
 import hashlib
-from typing import Dict, List, Optional, Any, Tuple, Set, Union, Callable
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
-from pathlib import Path
-from enum import Enum, auto
-from collections import defaultdict, deque
+import json
+import logging
 import pickle
+import re
+from collections import defaultdict, deque
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum, auto
+from pathlib import Path
 from string import Template
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+
 import yaml
 
 # Configure module logger
@@ -1581,9 +1582,9 @@ class PromptOrchestrator:
 
 # Example usage and testing
 if __name__ == "__main__":
-    import tempfile
     import asyncio
-    
+    import tempfile
+
     # Set up logging
     logging.basicConfig(level=logging.INFO)
     
@@ -1591,7 +1592,7 @@ if __name__ == "__main__":
     class MockClaudeClient:
         async def chat(self, prompt: str, max_tokens: int = 4000):
             from types import SimpleNamespace
-            
+
             # Generate different responses based on prompt content
             if 'error' in prompt.lower():
                 content = """
