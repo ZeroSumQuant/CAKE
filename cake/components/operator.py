@@ -1,0 +1,829 @@
+#!/usr/bin/env python3
+"""
+operator.py - Dustin-style intervention system for CAKE
+
+Provides direct, no-nonsense corrections when Claude is about to do something dumb.
+Acts as "Dustin-when-Dustin's-not-here" with system-level authority.
+
+Author: CAKE Team
+License: MIT
+Python: 3.11+
+"""
+
+import re
+from typing import Dict, List, Optional, Any, Tuple
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import Enum, auto
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class InterventionType(Enum):
+    """Types of operator interventions."""
+    REPEAT_ERROR = auto()          # Same error within 24h
+    CI_FAILURE = auto()            # Trying to push with failing CI
+    LINTER_VIOLATION = auto()      # Ignoring linter warnings
+    FEATURE_CREEP = auto()         # Adding features during bug fix
+    TEST_SKIP = auto()             # Skipping test writing
+    COVERAGE_DROP = auto()         # Test coverage below threshold
+    FORCE_PUSH = auto()            # Attempting force push
+    UNSAFE_OPERATION = auto()      # Dangerous command detected
+    PATTERN_VIOLATION = auto()     # Known anti-pattern detected
+    FOCUS_DRIFT = auto()           # Straying from original task
+
+
+@dataclass
+class InterventionContext:
+    """Context for generating intervention messages."""
+    intervention_type: InterventionType
+    current_action: str
+    error_details: Optional[Dict[str, Any]] = None
+    previous_attempts: List[Dict[str, Any]] = None
+    task_context: Optional[Dict[str, Any]] = None
+    ci_status: Optional[Dict[str, Any]] = None
+    coverage_metrics: Optional[Dict[str, Any]] = None
+    timestamp: datetime = None
+    
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.now()
+        if self.previous_attempts is None:
+            self.previous_attempts = []
+
+
+class OperatorBuilder:
+    """
+    Builds Dustin-style intervention messages for CAKE.
+    
+    Direct, helpful, no fluff - just like Dustin would say it.
+    """
+    
+    # Intervention message templates
+    TEMPLATES = {
+        InterventionType.REPEAT_ERROR: (
+            "Stop. You already hit {error_type} in {file_path} {time_ago} ago. "
+            "{previous_fix} didn't work. {suggestion}"
+        ),
+        
+        InterventionType.CI_FAILURE: (
+            "Stop. CI is red. {failing_count} tests failing: {failing_tests}. "
+            "Fix the tests first. Run: {test_command}"
+        ),
+        
+        InterventionType.LINTER_VIOLATION: (
+            "Stop. {linter} reports {violation_count} issues. "
+            "Run: {fix_command}. It's in CLAUDE.md line {doc_line}."
+        ),
+        
+        InterventionType.FEATURE_CREEP: (
+            "Stop. Original issue was: '{original_issue}'. "
+            "You've added: {added_features}. Stay focused. Revert unrelated changes."
+        ),
+        
+        InterventionType.TEST_SKIP: (
+            "Stop. No tests for {changed_files}. "
+            "Write tests first. Minimum coverage: {min_coverage}%."
+        ),
+        
+        InterventionType.COVERAGE_DROP: (
+            "Stop. Coverage dropped to {current_coverage}% (was {previous_coverage}%). "
+            "Required: {required_coverage}%. Add tests for: {uncovered_files}"
+        ),
+        
+        InterventionType.FORCE_PUSH: (
+            "Stop. No force pushing with failing CI. "
+            "Status: {ci_status}. Fix it properly."
+        ),
+        
+        InterventionType.UNSAFE_OPERATION: (
+            "Stop. Command '{command}' is unsafe. "
+            "{reason}. Use: {safe_alternative}"
+        ),
+        
+        InterventionType.PATTERN_VIOLATION: (
+            "Stop. That's the '{pattern_name}' anti-pattern. "
+            "You tried this in {previous_project}. {correct_approach}"
+        ),
+        
+        InterventionType.FOCUS_DRIFT: (
+            "Stop. You're {drift_description}. "
+            "Original task: '{original_task}'. Get back on track."
+        )
+    }
+    
+    # Specific suggestions for common errors
+    ERROR_SUGGESTIONS = {
+        'ModuleNotFoundError': "Check if it's in requirements.txt first",
+        'ImportError': "Verify the import path and package installation",
+        'SyntaxError': "Run 'python -m py_compile {file}' to check syntax",
+        'TypeError': "Check the function signature and argument types",
+        'AttributeError': "Verify the object has that attribute with dir()",
+        'PermissionError': "Check file permissions with 'ls -la'",
+        'FileNotFoundError': "Verify the file path exists",
+        'ConnectionError': "Check network connectivity and endpoints",
+        'TestFailure': "Run the specific test with -vvs for details",
+        'LinterError': "Let the linter auto-fix: '{fix_command}'"
+    }
+    
+    # Documentation references
+    DOC_REFERENCES = {
+        'linter': 47,
+        'testing': 23,
+        'ci': 89,
+        'git': 104,
+        'patterns': 156
+    }
+    
+    def __init__(self, strictness_level: float = 1.0):
+        """
+        Initialize the operator builder.
+        
+        Args:
+            strictness_level: 0.0-1.0, how strict to be (1.0 = full Dustin mode)
+        """
+        self.strictness_level = strictness_level
+        self.intervention_history: List[Tuple[datetime, InterventionType]] = []
+    
+    def build_message(self, context: InterventionContext) -> str:
+        """
+        Build an intervention message based on context.
+        
+        Args:
+            context: The intervention context
+            
+        Returns:
+            The operator message to prepend to Claude's context
+        """
+        # Get base template
+        template = self.TEMPLATES.get(
+            context.intervention_type,
+            "Stop. Unspecified issue detected. Check your approach."
+        )
+        
+        # Build template variables
+        template_vars = self._build_template_variables(context)
+        
+        # Format message
+        try:
+            message = template.format(**template_vars)
+        except KeyError as e:
+            logger.warning(f"Missing template variable: {e}")
+            message = f"Stop. {context.intervention_type.name} detected. Review your approach."
+        
+        # Add prefix
+        message = f"Operator (CAKE): {message}"
+        
+        # Record intervention
+        self.intervention_history.append((datetime.now(), context.intervention_type))
+        
+        # Add escalation if repeated interventions
+        if self._should_escalate():
+            message += "\n\nOperator (CAKE): Multiple interventions triggered. Consider taking a break."
+        
+        return message
+    
+    def _build_template_variables(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for template formatting."""
+        vars = {}
+        
+        if context.intervention_type == InterventionType.REPEAT_ERROR:
+            vars.update(self._build_repeat_error_vars(context))
+        elif context.intervention_type == InterventionType.CI_FAILURE:
+            vars.update(self._build_ci_failure_vars(context))
+        elif context.intervention_type == InterventionType.LINTER_VIOLATION:
+            vars.update(self._build_linter_vars(context))
+        elif context.intervention_type == InterventionType.FEATURE_CREEP:
+            vars.update(self._build_feature_creep_vars(context))
+        elif context.intervention_type == InterventionType.TEST_SKIP:
+            vars.update(self._build_test_skip_vars(context))
+        elif context.intervention_type == InterventionType.COVERAGE_DROP:
+            vars.update(self._build_coverage_vars(context))
+        elif context.intervention_type == InterventionType.FORCE_PUSH:
+            vars.update(self._build_force_push_vars(context))
+        elif context.intervention_type == InterventionType.UNSAFE_OPERATION:
+            vars.update(self._build_unsafe_op_vars(context))
+        elif context.intervention_type == InterventionType.PATTERN_VIOLATION:
+            vars.update(self._build_pattern_vars(context))
+        elif context.intervention_type == InterventionType.FOCUS_DRIFT:
+            vars.update(self._build_focus_drift_vars(context))
+        
+        return vars
+    
+    def _build_repeat_error_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for repeat error interventions."""
+        error_details = context.error_details or {}
+        previous = context.previous_attempts[0] if context.previous_attempts else {}
+        
+        # FIX: Proper time calculation including days
+        if previous.get('timestamp'):
+            time_delta = datetime.now() - previous['timestamp']
+            total_seconds = time_delta.total_seconds()
+            
+            if total_seconds < 60:
+                time_ago = f"{int(total_seconds)} seconds"
+            elif total_seconds < 3600:
+                time_ago = f"{int(total_seconds // 60)} minutes"
+            elif total_seconds < 86400:
+                time_ago = f"{int(total_seconds // 3600)} hours"
+            else:
+                time_ago = f"{int(total_seconds // 86400)} days"
+        else:
+            time_ago = "recently"
+        
+        error_type = error_details.get('error_type', 'the same error')
+        suggestion = self.ERROR_SUGGESTIONS.get(
+            error_type,
+            "Try a different approach"
+        )
+        
+        # FIX: Handle None values safely
+        previous_fix = previous.get('attempted_fix', 'Your previous approach')
+        if previous_fix is None:
+            previous_fix = 'Your previous approach'
+        
+        return {
+            'error_type': error_type,
+            'file_path': error_details.get('file_path', 'this file'),
+            'time_ago': time_ago,
+            'previous_fix': previous_fix,
+            'suggestion': suggestion
+        }
+    
+    def _build_ci_failure_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for CI failure interventions."""
+        ci_status = context.ci_status or {}
+        failing_tests = ci_status.get('failing_tests', [])
+        
+        # Format failing tests list
+        if len(failing_tests) > 3:
+            test_list = ', '.join(failing_tests[:3]) + f" and {len(failing_tests) - 3} more"
+        else:
+            test_list = ', '.join(failing_tests) if failing_tests else "multiple tests"
+        
+        return {
+            'failing_count': len(failing_tests),
+            'failing_tests': test_list,
+            'test_command': ci_status.get('test_command', 'pytest -xvs')
+        }
+    
+    def _build_linter_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for linter violation interventions."""
+        error_details = context.error_details or {}
+        linter = error_details.get('linter', 'The linter')
+        
+        fix_commands = {
+            'black': 'black .',
+            'isort': 'isort .',
+            'flake8': 'flake8 --extend-ignore=E203',
+            'mypy': 'mypy --ignore-missing-imports .',
+            'ruff': 'ruff check --fix .'
+        }
+        
+        fix_command = fix_commands.get(
+            linter.lower(),
+            f"{linter} --fix"
+        )
+        
+        return {
+            'linter': linter,
+            'violation_count': error_details.get('violation_count', 'multiple'),
+            'fix_command': fix_command,
+            'doc_line': self.DOC_REFERENCES.get('linter', '??')
+        }
+    
+    def _build_feature_creep_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for feature creep interventions."""
+        task_context = context.task_context or {}
+        
+        added = task_context.get('added_features', [])
+        if isinstance(added, list):
+            added_desc = ', '.join(f"'{f}'" for f in added[:3])
+            if len(added) > 3:
+                added_desc += f" and {len(added) - 3} more things"
+        else:
+            added_desc = "unrelated changes"
+        
+        return {
+            'original_issue': task_context.get('original_issue', 'the bug fix'),
+            'added_features': added_desc
+        }
+    
+    def _build_test_skip_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for test skip interventions."""
+        task_context = context.task_context or {}
+        changed_files = task_context.get('changed_files', [])
+        
+        if isinstance(changed_files, list) and changed_files:
+            files_desc = ', '.join(changed_files[:3])
+            if len(changed_files) > 3:
+                files_desc += f" and {len(changed_files) - 3} more"
+        else:
+            files_desc = "your changes"
+        
+        return {
+            'changed_files': files_desc,
+            'min_coverage': task_context.get('min_coverage', 90)
+        }
+    
+    def _build_coverage_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for coverage drop interventions."""
+        coverage = context.coverage_metrics or {}
+        
+        uncovered = coverage.get('uncovered_files', [])
+        if isinstance(uncovered, list) and uncovered:
+            uncovered_desc = ', '.join(uncovered[:2])
+            if len(uncovered) > 2:
+                uncovered_desc += f" and {len(uncovered) - 2} more"
+        else:
+            uncovered_desc = "recent changes"
+        
+        return {
+            'current_coverage': coverage.get('current', 0),
+            'previous_coverage': coverage.get('previous', 0),
+            'required_coverage': coverage.get('required', 90),
+            'uncovered_files': uncovered_desc
+        }
+    
+    def _build_force_push_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for force push interventions."""
+        ci_status = context.ci_status or {}
+        
+        status_desc = ci_status.get('status', 'FAILING')
+        if ci_status.get('failing_count'):
+            status_desc += f" ({ci_status['failing_count']} failures)"
+        
+        return {
+            'ci_status': status_desc
+        }
+    
+    def _build_unsafe_op_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for unsafe operation interventions."""
+        error_details = context.error_details or {}
+        
+        unsafe_alternatives = {
+            'rm -rf /': "Use 'rm -rf ./specific_directory'",
+            'chmod 777': "Use 'chmod 755' for directories, '644' for files",
+            'sudo pip': "Use virtual environments instead",
+            'git push --force': "Use 'git push --force-with-lease'",
+            ':w!': "Check file permissions first",
+            'kill -9': "Try 'kill -TERM' first"
+        }
+        
+        command = error_details.get('command', 'that command')
+        
+        return {
+            'command': command,
+            'reason': error_details.get('reason', "It's dangerous"),
+            'safe_alternative': unsafe_alternatives.get(
+                command,
+                "a safer approach"
+            )
+        }
+    
+    def _build_pattern_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for pattern violation interventions."""
+        error_details = context.error_details or {}
+        
+        pattern_corrections = {
+            'copy_paste': "Extract common code to a function",
+            'god_object': "Split into smaller, focused classes",
+            'callback_hell': "Use async/await or promises",
+            'magic_numbers': "Define named constants",
+            'deep_nesting': "Extract methods or use early returns",
+            'todo_accumulation': "Address TODOs or create tickets"
+        }
+        
+        pattern = error_details.get('pattern_name', 'problematic pattern')
+        
+        return {
+            'pattern_name': pattern,
+            'previous_project': error_details.get('previous_project', 'a previous project'),
+            'correct_approach': pattern_corrections.get(
+                pattern,
+                "Follow best practices"
+            )
+        }
+    
+    def _build_focus_drift_vars(self, context: InterventionContext) -> Dict[str, Any]:
+        """Build variables for focus drift interventions."""
+        task_context = context.task_context or {}
+        
+        drift_descriptions = {
+            'refactoring': "refactoring unrelated code",
+            'optimizing': "optimizing prematurely",
+            'beautifying': "beautifying instead of fixing",
+            'architecting': "over-architecting the solution",
+            'exploring': "exploring tangential ideas"
+        }
+        
+        drift_type = task_context.get('drift_type', 'exploring')
+        
+        return {
+            'drift_description': drift_descriptions.get(drift_type, "going off track"),
+            'original_task': task_context.get('original_task', 'the assigned task')
+        }
+    
+    def _should_escalate(self) -> bool:
+        """Check if we should escalate due to repeated interventions."""
+        if len(self.intervention_history) < 3:
+            return False
+        
+        # Check last 3 interventions within 10 minutes
+        recent = self.intervention_history[-3:]
+        time_span = recent[-1][0] - recent[0][0]
+        
+        return time_span.seconds < 600  # 10 minutes
+    
+    def get_intervention_stats(self) -> Dict[str, Any]:
+        """Get statistics about interventions."""
+        if not self.intervention_history:
+            return {'total_interventions': 0}
+        
+        type_counts = {}
+        for _, intervention_type in self.intervention_history:
+            type_name = intervention_type.name
+            type_counts[type_name] = type_counts.get(type_name, 0) + 1
+        
+        return {
+            'total_interventions': len(self.intervention_history),
+            'interventions_by_type': type_counts,
+            'last_intervention': self.intervention_history[-1][0].isoformat(),
+            'escalation_risk': self._should_escalate()
+        }
+
+
+class InterventionAnalyzer:
+    """Analyzes patterns to determine when intervention is needed."""
+    
+    def __init__(self):
+        """Initialize the analyzer."""
+        self.pattern_matchers = {
+            InterventionType.REPEAT_ERROR: self._check_repeat_error,
+            InterventionType.CI_FAILURE: self._check_ci_failure,
+            InterventionType.LINTER_VIOLATION: self._check_linter_violation,
+            InterventionType.FEATURE_CREEP: self._check_feature_creep,
+            InterventionType.TEST_SKIP: self._check_test_skip,
+            InterventionType.COVERAGE_DROP: self._check_coverage_drop,
+            InterventionType.FORCE_PUSH: self._check_force_push,
+            InterventionType.UNSAFE_OPERATION: self._check_unsafe_operation,
+            InterventionType.PATTERN_VIOLATION: self._check_pattern_violation,
+            InterventionType.FOCUS_DRIFT: self._check_focus_drift
+        }
+    
+    def analyze_situation(self, 
+                         current_state: Dict[str, Any],
+                         recall_db: Any) -> Optional[InterventionContext]:
+        """
+        Analyze current situation to determine if intervention is needed.
+        
+        Args:
+            current_state: Current system state
+            recall_db: RecallDB instance for checking history
+            
+        Returns:
+            InterventionContext if intervention needed, None otherwise
+        """
+        # Check each pattern
+        for intervention_type, checker in self.pattern_matchers.items():
+            context = checker(current_state, recall_db)
+            if context:
+                return context
+        
+        return None
+    
+    def _check_repeat_error(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for repeated errors within 24h."""
+        current_error = state.get('error')
+        if not current_error:
+            return None
+        
+        file_path = state.get('file_path', '')
+        error_type = self._extract_error_type(current_error)
+        
+        # Check recall database
+        previous_attempts = recall_db.get_similar_errors(
+            error_type=error_type,
+            file_path=file_path,
+            time_window_hours=24
+        )
+        
+        if previous_attempts:
+            return InterventionContext(
+                intervention_type=InterventionType.REPEAT_ERROR,
+                current_action=state.get('action', 'coding'),
+                error_details={
+                    'error_type': error_type,
+                    'file_path': file_path,
+                    'error_message': current_error
+                },
+                previous_attempts=previous_attempts
+            )
+        
+        return None
+    
+    def _check_ci_failure(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for attempts to push with failing CI."""
+        if state.get('action') != 'git_push':
+            return None
+        
+        ci_status = state.get('ci_status', {})
+        if ci_status.get('passing', True):
+            return None
+        
+        return InterventionContext(
+            intervention_type=InterventionType.CI_FAILURE,
+            current_action='git_push',
+            ci_status=ci_status
+        )
+    
+    def _check_linter_violation(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for ignored linter violations."""
+        if state.get('action') not in ['git_commit', 'git_push']:
+            return None
+        
+        linter_status = state.get('linter_status', {})
+        if not linter_status.get('violations'):
+            return None
+        
+        return InterventionContext(
+            intervention_type=InterventionType.LINTER_VIOLATION,
+            current_action=state.get('action'),
+            error_details={
+                'linter': linter_status.get('linter_name', 'linter'),
+                'violation_count': len(linter_status.get('violations', [])),
+                'violations': linter_status.get('violations', [])
+            }
+        )
+    
+    def _check_feature_creep(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for feature creep during bug fixes."""
+        task_type = state.get('task_context', {}).get('type')
+        if task_type != 'bug_fix':
+            return None
+        
+        changes = state.get('changes', {})
+        original_scope = state.get('task_context', {}).get('scope', [])
+        
+        # Detect added features
+        added_features = []
+        for change in changes.get('files_modified', []):
+            if not self._is_in_scope(change, original_scope):
+                added_features.append(change)
+        
+        if added_features:
+            return InterventionContext(
+                intervention_type=InterventionType.FEATURE_CREEP,
+                current_action='coding',
+                task_context={
+                    'original_issue': state.get('task_context', {}).get('description'),
+                    'added_features': added_features
+                }
+            )
+        
+        return None
+    
+    def _check_test_skip(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for skipping test writing."""
+        if state.get('action') not in ['git_commit', 'git_push']:
+            return None
+        
+        changes = state.get('changes', {})
+        test_changes = changes.get('test_files_modified', [])
+        code_changes = changes.get('code_files_modified', [])
+        
+        # If code changed but no tests, intervention needed
+        if code_changes and not test_changes:
+            return InterventionContext(
+                intervention_type=InterventionType.TEST_SKIP,
+                current_action=state.get('action'),
+                task_context={
+                    'changed_files': code_changes,
+                    'min_coverage': state.get('project_config', {}).get('min_coverage', 90)
+                }
+            )
+        
+        return None
+    
+    def _check_coverage_drop(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for test coverage drops."""
+        coverage = state.get('coverage_metrics', {})
+        if not coverage:
+            return None
+        
+        current = coverage.get('current_coverage', 100)
+        previous = coverage.get('previous_coverage', 100)
+        required = coverage.get('required_coverage', 90)
+        
+        if current < required and current < previous:
+            return InterventionContext(
+                intervention_type=InterventionType.COVERAGE_DROP,
+                current_action=state.get('action', 'testing'),
+                coverage_metrics=coverage
+            )
+        
+        return None
+    
+    def _check_force_push(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for force push attempts."""
+        if state.get('action') != 'git_push':
+            return None
+        
+        push_flags = state.get('git_flags', [])
+        if '--force' not in push_flags and '-f' not in push_flags:
+            return None
+        
+        ci_status = state.get('ci_status', {})
+        if not ci_status.get('passing', True):
+            return InterventionContext(
+                intervention_type=InterventionType.FORCE_PUSH,
+                current_action='git_push --force',
+                ci_status=ci_status
+            )
+        
+        return None
+    
+    def _check_unsafe_operation(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for unsafe operations."""
+        command = state.get('command', '')
+        if not command:
+            return None
+        
+        unsafe_patterns = [
+            (r'rm\s+-rf\s+/', "Deleting from root is dangerous"),
+            (r'chmod\s+777', "Too permissive permissions"),
+            (r'sudo\s+pip', "Don't use sudo with pip"),
+            (r'>\s*/dev/null\s+2>&1', "Hiding all output makes debugging hard"),
+            (r'curl.*\|\s*sh', "Piping curl to shell is unsafe"),
+        ]
+        
+        for pattern, reason in unsafe_patterns:
+            if re.search(pattern, command):
+                return InterventionContext(
+                    intervention_type=InterventionType.UNSAFE_OPERATION,
+                    current_action='command_execution',
+                    error_details={
+                        'command': command,
+                        'reason': reason
+                    }
+                )
+        
+        return None
+    
+    def _check_pattern_violation(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for known anti-patterns."""
+        code_analysis = state.get('code_analysis', {})
+        if not code_analysis:
+            return None
+        
+        # Check for known anti-patterns
+        anti_patterns = {
+            'copy_paste': code_analysis.get('duplicate_code_ratio', 0) > 0.15,
+            'god_object': code_analysis.get('max_class_lines', 0) > 500,
+            'deep_nesting': code_analysis.get('max_nesting_depth', 0) > 4,
+            'todo_accumulation': code_analysis.get('todo_count', 0) > 10
+        }
+        
+        for pattern_name, detected in anti_patterns.items():
+            if detected:
+                # Check if this pattern was seen before
+                previous = recall_db.get_pattern_violations(pattern_name)
+                
+                return InterventionContext(
+                    intervention_type=InterventionType.PATTERN_VIOLATION,
+                    current_action='coding',
+                    error_details={
+                        'pattern_name': pattern_name,
+                        'previous_project': previous[0]['project'] if previous else None
+                    }
+                )
+        
+        return None
+    
+    def _check_focus_drift(self, state: Dict[str, Any], recall_db: Any) -> Optional[InterventionContext]:
+        """Check for drifting from original task."""
+        task_context = state.get('task_context', {})
+        if not task_context:
+            return None
+        
+        original_files = set(task_context.get('target_files', []))
+        current_files = set(state.get('changes', {}).get('files_modified', []))
+        
+        # Check if modifying unrelated files
+        unrelated_files = current_files - original_files
+        unrelated_ratio = len(unrelated_files) / max(len(current_files), 1)
+        
+        if unrelated_ratio > 0.5:  # More than 50% unrelated
+            drift_type = self._categorize_drift(state)
+            
+            return InterventionContext(
+                intervention_type=InterventionType.FOCUS_DRIFT,
+                current_action='coding',
+                task_context={
+                    'drift_type': drift_type,
+                    'original_task': task_context.get('description', 'original task')
+                }
+            )
+        
+        return None
+    
+    def _extract_error_type(self, error_message: str) -> str:
+        """Extract error type from error message."""
+        # Look for Python exception types
+        match = re.search(r'(\w+Error|\w+Exception)', error_message)
+        if match:
+            return match.group(1)
+        
+        # Look for common error patterns
+        if 'permission denied' in error_message.lower():
+            return 'PermissionError'
+        elif 'not found' in error_message.lower():
+            return 'NotFoundError'
+        elif 'timeout' in error_message.lower():
+            return 'TimeoutError'
+        
+        return 'UnknownError'
+    
+    def _is_in_scope(self, file_path: str, scope: List[str]) -> bool:
+        """Check if file is in original scope."""
+        for scope_item in scope:
+            if scope_item in file_path:
+                return True
+        return False
+    
+    def _categorize_drift(self, state: Dict[str, Any]) -> str:
+        """Categorize the type of focus drift."""
+        changes = state.get('changes', {})
+        
+        if 'refactor' in str(changes).lower():
+            return 'refactoring'
+        elif 'optimize' in str(changes).lower():
+            return 'optimizing'
+        elif 'style' in str(changes).lower() or 'format' in str(changes).lower():
+            return 'beautifying'
+        elif 'architecture' in str(changes).lower():
+            return 'architecting'
+        else:
+            return 'exploring'
+
+
+# Example usage for testing
+if __name__ == "__main__":
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
+    
+    # Create operator
+    operator = OperatorBuilder(strictness_level=1.0)
+    
+    # Test repeat error intervention
+    context = InterventionContext(
+        intervention_type=InterventionType.REPEAT_ERROR,
+        current_action="trying to import requests",
+        error_details={
+            'error_type': 'ModuleNotFoundError',
+            'file_path': 'main.py',
+            'error_message': "ModuleNotFoundError: No module named 'requests'"
+        },
+        previous_attempts=[{
+            'timestamp': datetime.now() - timedelta(minutes=30),
+            'attempted_fix': "pip install request (typo)"
+        }]
+    )
+    
+    message = operator.build_message(context)
+    print(message)
+    print()
+    
+    # Test CI failure intervention
+    context2 = InterventionContext(
+        intervention_type=InterventionType.CI_FAILURE,
+        current_action="git push",
+        ci_status={
+            'passing': False,
+            'failing_tests': ['test_auth.py::test_login', 'test_auth.py::test_logout', 
+                             'test_api.py::test_endpoints', 'test_db.py::test_connection'],
+            'test_command': 'pytest tests/test_auth.py -xvs'
+        }
+    )
+    
+    message2 = operator.build_message(context2)
+    print(message2)
+    print()
+    
+    # Test feature creep intervention
+    context3 = InterventionContext(
+        intervention_type=InterventionType.FEATURE_CREEP,
+        current_action="coding",
+        task_context={
+            'original_issue': 'Fix login timeout bug',
+            'added_features': ['new UI theme', 'user avatar upload', 'social login']
+        }
+    )
+    
+    message3 = operator.build_message(context3)
+    print(message3)
+    
+    # Show stats
+    print("\nIntervention Stats:")
+    print(operator.get_intervention_stats())

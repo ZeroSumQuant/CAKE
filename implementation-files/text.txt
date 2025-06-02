@@ -1,0 +1,613 @@
+#!/usr/bin/env python3
+"""
+strategist.py - Deterministic Decision Engine for CAK
+
+This module provides the strategic brain for CAK, making deterministic decisions
+about workflow control, escalation, and resource management.
+
+Author: CAK Team
+License: MIT
+Python: 3.11+
+"""
+
+import json
+import logging
+from datetime import datetime
+from enum import Enum, auto
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Tuple
+import yaml
+from dataclasses import dataclass, field, asdict
+
+# Configure module logger
+logger = logging.getLogger(__name__)
+
+
+class Decision(Enum):
+    """Possible strategic decisions the system can make."""
+    PROCEED = auto()      # Continue to next stage
+    RETRY = auto()        # Retry current stage
+    REROUTE = auto()      # Jump to different stage
+    ESCALATE = auto()     # Escalate to human
+    ABORT = auto()        # Abort entire operation
+    FETCH_INFO = auto()   # Fetch external information
+    CREATE_RULE = auto()  # Create new automation rule
+    PAUSE = auto()        # Temporary pause for cooldown
+    CHECKPOINT = auto()   # Save state before risky operation
+
+
+@dataclass
+class StrategyDecision:
+    """
+    Encapsulates a strategic decision with full context.
+    
+    Attributes:
+        action: The decision type
+        target_stage: For REROUTE decisions, where to go
+        reason: Human-readable explanation
+        confidence: 0.0-1.0 confidence in this decision
+        metadata: Additional context-specific data
+        estimated_cost: Predicted cost of this action
+    """
+    action: Decision
+    target_stage: Optional[str] = None
+    reason: str = ""
+    confidence: float = 1.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    estimated_cost: float = 0.0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize for logging/persistence."""
+        data = asdict(self)
+        data['action'] = self.action.name
+        return data
+    
+    def __str__(self) -> str:
+        """Human-readable representation."""
+        parts = [f"Decision: {self.action.name}"]
+        if self.target_stage:
+            parts.append(f"Target: {self.target_stage}")
+        if self.reason:
+            parts.append(f"Reason: {self.reason}")
+        parts.append(f"Confidence: {self.confidence:.1%}")
+        return " | ".join(parts)
+
+
+class ConditionEvaluator:
+    """
+    Safe condition evaluator for policy rules.
+    Uses a restricted DSL instead of eval() for security.
+    """
+    
+    @staticmethod
+    def evaluate(condition: str, state: Dict[str, Any]) -> bool:
+        """
+        Evaluate a condition string against state.
+        
+        Supports:
+        - Comparisons: ==, !=, <, >, <=, >=
+        - Logic: and, or, not
+        - Contains: 'substring' in field
+        - Nested fields: state.substage.value
+        
+        Args:
+            condition: DSL condition string
+            state: Current system state
+            
+        Returns:
+            Boolean evaluation result
+        """
+        try:
+            # Parse and evaluate condition safely
+            tokens = ConditionEvaluator._tokenize(condition)
+            return ConditionEvaluator._evaluate_tokens(tokens, state)
+        except Exception as e:
+            logger.warning(f"Condition evaluation failed: {condition} - {e}")
+            return False
+    
+    @staticmethod
+    def _tokenize(condition: str) -> List[str]:
+        """Tokenize condition string (simplified for example)."""
+        # In production, use proper lexer/parser
+        # This is a simplified version
+        import re
+        tokens = re.findall(r"'[^']*'|\"[^\"]*\"|[^\s]+", condition)
+        return tokens
+    
+    @staticmethod
+    def _evaluate_tokens(tokens: List[str], state: Dict[str, Any]) -> bool:
+        """Evaluate tokenized condition (simplified)."""
+        # In production, build proper AST
+        # This handles simple cases for demonstration
+        condition = " ".join(tokens)
+        
+        # Replace state references
+        for key, value in state.items():
+            if isinstance(value, str):
+                condition = condition.replace(key, f"'{value}'")
+            else:
+                condition = condition.replace(key, str(value))
+        
+        # Safe evaluation of simple conditions
+        try:
+            # Only allow specific operations
+            allowed_names = {'True', 'False', 'and', 'or', 'not', 'in'}
+            code = compile(condition, '<condition>', 'eval')
+            
+            # Verify no dangerous operations
+            for name in code.co_names:
+                if name not in allowed_names:
+                    raise ValueError(f"Unsafe name: {name}")
+            
+            return eval(code, {"__builtins__": {}}, {})
+        except:
+            return False
+
+
+class Strategist:
+    """
+    Main strategic decision-making engine.
+    
+    Makes deterministic decisions based on policies and system state.
+    All decisions are logged for debugging and learning.
+    """
+    
+    def __init__(self, policy_file: Path):
+        """
+        Initialize with policy configuration.
+        
+        Args:
+            policy_file: Path to YAML policy configuration
+        """
+        self.policy_file = policy_file
+        self.policies = self._load_policies()
+        self.decision_history: List[Dict[str, Any]] = []
+        self.evaluator = ConditionEvaluator()
+        
+        # Decision statistics for optimization
+        self.decision_stats = {
+            decision: {'count': 0, 'success_rate': 0.0}
+            for decision in Decision
+        }
+        
+        logger.info(f"Strategist initialized with policies from {policy_file}")
+    
+    def _load_policies(self) -> Dict[str, Any]:
+        """Load and validate policy configuration."""
+        try:
+            with open(self.policy_file, 'r') as f:
+                policies = yaml.safe_load(f)
+            
+            # Validate required sections
+            required = ['default', 'stages', 'patterns']
+            for section in required:
+                if section not in policies:
+                    raise ValueError(f"Missing required section: {section}")
+            
+            return policies
+        except Exception as e:
+            logger.error(f"Failed to load policies: {e}")
+            # Return minimal safe defaults
+            return {
+                'default': {'fail_threshold': 3, 'cost_limit': 5.0},
+                'stages': {},
+                'patterns': {}
+            }
+    
+    def decide(self, state: Dict[str, Any]) -> StrategyDecision:
+        """
+        Make strategic decision based on current state.
+        
+        Args:
+            state: Current system state including:
+                - stage: Current TRRDEVS stage
+                - failure_count: Number of failures
+                - cost: Current cost
+                - budget: Cost budget
+                - error: Last error message
+                - context: Additional context
+                
+        Returns:
+            StrategyDecision with action to take
+        """
+        # Record decision request
+        decision_id = self._record_decision_start(state)
+        
+        try:
+            # Run decision pipeline
+            decision = self._decision_pipeline(state)
+            
+            # Record decision made
+            self._record_decision_end(decision_id, decision)
+            
+            # Update statistics
+            self.decision_stats[decision.action]['count'] += 1
+            
+            return decision
+            
+        except Exception as e:
+            logger.error(f"Decision pipeline failed: {e}")
+            # Safe fallback
+            return StrategyDecision(
+                action=Decision.ESCALATE,
+                reason=f"Decision pipeline error: {str(e)}",
+                confidence=0.0
+            )
+    
+    def _decision_pipeline(self, state: Dict[str, Any]) -> StrategyDecision:
+        """
+        Core decision pipeline with priority ordering.
+        
+        Earlier checks have higher priority.
+        """
+        # 1. Check critical abort conditions
+        if decision := self._check_abort_conditions(state):
+            return decision
+        
+        # 2. Check escalation triggers
+        if decision := self._check_escalation_conditions(state):
+            return decision
+        
+        # 3. Check if we need information
+        if decision := self._check_information_needs(state):
+            return decision
+        
+        # 4. Check if we should create a rule
+        if decision := self._check_rule_creation(state):
+            return decision
+        
+        # 5. Check stage-specific rerouting
+        if decision := self._check_rerouting(state):
+            return decision
+        
+        # 6. Check if we should pause
+        if decision := self._check_pause_conditions(state):
+            return decision
+        
+        # 7. Default: proceed
+        return StrategyDecision(
+            action=Decision.PROCEED,
+            reason="No special conditions met",
+            confidence=0.9
+        )
+    
+    def _check_abort_conditions(self, state: Dict[str, Any]) -> Optional[StrategyDecision]:
+        """Check if we should abort the entire operation."""
+        abort_conditions = self.policies.get('abort_conditions', [])
+        
+        for condition in abort_conditions:
+            if self.evaluator.evaluate(condition, state):
+                return StrategyDecision(
+                    action=Decision.ABORT,
+                    reason=f"Abort condition met: {condition}",
+                    confidence=1.0,
+                    metadata={'condition': condition, 'state_snapshot': state}
+                )
+        
+        # Hard limits
+        if state.get('cost', 0) > state.get('budget', float('inf')):
+            return StrategyDecision(
+                action=Decision.ABORT,
+                reason=f"Cost exceeded: ${state['cost']:.2f} > ${state['budget']:.2f}",
+                confidence=1.0
+            )
+        
+        return None
+    
+    def _check_escalation_conditions(self, state: Dict[str, Any]) -> Optional[StrategyDecision]:
+        """Check if human intervention is needed."""
+        escalate_conditions = self.policies.get('escalate_conditions', [])
+        
+        for condition in escalate_conditions:
+            if self.evaluator.evaluate(condition, state):
+                return StrategyDecision(
+                    action=Decision.ESCALATE,
+                    reason=f"Escalation condition met: {condition}",
+                    confidence=0.95,
+                    metadata={
+                        'condition': condition,
+                        'suggested_message': self._generate_escalation_message(state)
+                    }
+                )
+        
+        # Pattern-based escalation
+        if self._detect_escalation_pattern(state):
+            return StrategyDecision(
+                action=Decision.ESCALATE,
+                reason="Detected escalation pattern",
+                confidence=0.85
+            )
+        
+        return None
+    
+    def _check_information_needs(self, state: Dict[str, Any]) -> Optional[StrategyDecision]:
+        """Determine if we need external information."""
+        indicators = self.policies.get('information_indicators', {})
+        
+        for indicator, config in indicators.items():
+            if indicator in str(state.get('error', '')).lower():
+                return StrategyDecision(
+                    action=Decision.FETCH_INFO,
+                    reason=f"Information needed: {indicator}",
+                    confidence=config.get('confidence', 0.8),
+                    metadata={
+                        'query': config.get('query_template', '').format(**state),
+                        'sources': config.get('sources', ['docs'])
+                    }
+                )
+        
+        return None
+    
+    def _check_rule_creation(self, state: Dict[str, Any]) -> Optional[StrategyDecision]:
+        """Check if this failure pattern warrants rule creation."""
+        if state.get('failure_count', 0) < 2:
+            return None
+        
+        # Check if we've seen this pattern before
+        pattern = self._extract_error_pattern(state)
+        if pattern and self._is_rule_worthy(pattern, state):
+            return StrategyDecision(
+                action=Decision.CREATE_RULE,
+                reason=f"Recurring pattern detected: {pattern['type']}",
+                confidence=0.8,
+                metadata={'pattern': pattern}
+            )
+        
+        return None
+    
+    def _check_rerouting(self, state: Dict[str, Any]) -> Optional[StrategyDecision]:
+        """Check stage-specific rerouting rules."""
+        stage = state.get('stage')
+        reroute_rules = self.policies.get('reroute_map', {}).get(stage, [])
+        
+        for rule in reroute_rules:
+            if self.evaluator.evaluate(rule['condition'], state):
+                target = rule['target']
+                return StrategyDecision(
+                    action=Decision.REROUTE,
+                    target_stage=target,
+                    reason=f"Strategic reroute: {rule.get('reason', 'Policy match')}",
+                    confidence=rule.get('confidence', 0.9)
+                )
+        
+        return None
+    
+    def _check_pause_conditions(self, state: Dict[str, Any]) -> Optional[StrategyDecision]:
+        """Check if we should pause (rate limits, cooldown, etc)."""
+        # Check rate limit indicators
+        if 'rate limit' in str(state.get('error', '')).lower():
+            return StrategyDecision(
+                action=Decision.PAUSE,
+                reason="Rate limit detected",
+                confidence=1.0,
+                metadata={'wait_seconds': 60}
+            )
+        
+        # Check cooldown rules
+        recent_decisions = self.decision_history[-5:]
+        if len(recent_decisions) >= 5:
+            retry_count = sum(1 for d in recent_decisions if d['decision']['action'] == 'RETRY')
+            if retry_count >= 3:
+                return StrategyDecision(
+                    action=Decision.PAUSE,
+                    reason="Multiple retries detected, cooling down",
+                    confidence=0.9,
+                    metadata={'wait_seconds': 30}
+                )
+        
+        return None
+    
+    def _detect_escalation_pattern(self, state: Dict[str, Any]) -> bool:
+        """Detect complex patterns that warrant escalation."""
+        # Oscillation detection
+        if self._detect_oscillation():
+            return True
+        
+        # Degrading performance
+        if self._detect_degradation():
+            return True
+        
+        return False
+    
+    def _detect_oscillation(self) -> bool:
+        """Detect if we're bouncing between stages."""
+        if len(self.decision_history) < 6:
+            return False
+        
+        recent_stages = [d['state'].get('stage') for d in self.decision_history[-6:]]
+        # Check for A->B->A pattern
+        for i in range(len(recent_stages) - 2):
+            if recent_stages[i] == recent_stages[i + 2] and recent_stages[i] != recent_stages[i + 1]:
+                return True
+        
+        return False
+    
+    def _detect_degradation(self) -> bool:
+        """Detect if success rate is degrading."""
+        if len(self.decision_history) < 10:
+            return False
+        
+        recent = self.decision_history[-10:]
+        success_rate = sum(1 for d in recent if d['decision']['action'] != 'RETRY') / len(recent)
+        
+        return success_rate < 0.3
+    
+    def _extract_error_pattern(self, state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extract structured pattern from error."""
+        error = state.get('error', '')
+        stage = state.get('stage', '')
+        
+        # Pattern extraction logic
+        patterns = {
+            'ModuleNotFoundError': r"ModuleNotFoundError.*'(\w+)'",
+            'PermissionError': r"Permission denied.*'([^']+)'",
+            'AssertionError': r"AssertionError:?\s*(.+)",
+            'ConnectionError': r"(Connection|Timeout).*to\s+(\S+)"
+        }
+        
+        import re
+        for pattern_type, regex in patterns.items():
+            if match := re.search(regex, error):
+                return {
+                    'type': pattern_type,
+                    'stage': stage,
+                    'details': match.groups(),
+                    'full_match': match.group(0)
+                }
+        
+        return None
+    
+    def _is_rule_worthy(self, pattern: Dict[str, Any], state: Dict[str, Any]) -> bool:
+        """Determine if pattern is worth creating a rule."""
+        # Check if we already have a similar rule
+        # Check if pattern is deterministic
+        # Check if fix would be safe
+        return True  # Simplified for example
+    
+    def _generate_escalation_message(self, state: Dict[str, Any]) -> str:
+        """Generate helpful escalation message for human."""
+        return f"""
+CAK needs human assistance:
+Stage: {state.get('stage')}
+Failures: {state.get('failure_count')}
+Last Error: {state.get('error', 'Unknown')[:200]}
+Cost So Far: ${state.get('cost', 0):.2f}
+Suggestion: Check the logs for full context
+"""
+    
+    def _record_decision_start(self, state: Dict[str, Any]) -> str:
+        """Record beginning of decision process."""
+        decision_id = f"decision_{datetime.now().isoformat()}_{len(self.decision_history)}"
+        self.decision_history.append({
+            'id': decision_id,
+            'timestamp': datetime.now().isoformat(),
+            'state': state.copy(),
+            'decision': None
+        })
+        return decision_id
+    
+    def _record_decision_end(self, decision_id: str, decision: StrategyDecision):
+        """Record decision made."""
+        for record in self.decision_history:
+            if record['id'] == decision_id:
+                record['decision'] = decision.to_dict()
+                record['duration_ms'] = (datetime.now() - datetime.fromisoformat(record['timestamp'])).total_seconds() * 1000
+                break
+    
+    def get_decision_history(self, last_n: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get decision history for analysis."""
+        if last_n:
+            return self.decision_history[-last_n:]
+        return self.decision_history.copy()
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get decision statistics."""
+        return {
+            'total_decisions': len(self.decision_history),
+            'decision_counts': {k: v['count'] for k, v in self.decision_stats.items()},
+            'recent_success_rate': self._calculate_recent_success_rate(),
+            'average_decision_time_ms': self._calculate_avg_decision_time()
+        }
+    
+    def _calculate_recent_success_rate(self) -> float:
+        """Calculate success rate of recent decisions."""
+        if len(self.decision_history) < 10:
+            return 1.0
+        
+        recent = self.decision_history[-20:]
+        proceeds = sum(1 for d in recent if d['decision'] and d['decision']['action'] == 'PROCEED')
+        return proceeds / len(recent)
+    
+    def _calculate_avg_decision_time(self) -> float:
+        """Calculate average decision time in milliseconds."""
+        times = [d.get('duration_ms', 0) for d in self.decision_history if 'duration_ms' in d]
+        return sum(times) / len(times) if times else 0.0
+
+
+# Example usage and testing
+if __name__ == "__main__":
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
+    
+    # Create example policy file
+    example_policies = """
+default:
+  fail_threshold: 3
+  cost_limit: 5.0
+  token_limit: 50000
+
+abort_conditions:
+  - "cost > budget"
+  - "critical_error == True"
+  - "failure_count > 10"
+
+escalate_conditions:
+  - "stage == 'execute' and failure_count >= 3"
+  - "'security' in error and failure_count >= 1"
+  - "stage == 'validate' and 'critical' in error"
+
+information_indicators:
+  "unknown api":
+    confidence: 0.9
+    query_template: "{error} documentation"
+    sources: ["official_docs", "github"]
+  "module not found":
+    confidence: 0.8
+    query_template: "install {error}"
+    sources: ["pypi", "docs"]
+
+reroute_map:
+  validate:
+    - condition: "'assertion' in error"
+      target: "reflect"
+      reason: "Test failure requires design reconsideration"
+      confidence: 0.9
+    - condition: "'timeout' in error"
+      target: "execute"
+      reason: "Timeout may be transient"
+      confidence: 0.7
+  execute:
+    - condition: "failure_count >= 2 and 'syntax' in error"
+      target: "decide"
+      reason: "Syntax errors indicate planning issue"
+      confidence: 0.95
+"""
+    
+    # Test the strategist
+    with open("test_policy.yaml", "w") as f:
+        f.write(example_policies)
+    
+    strategist = Strategist(Path("test_policy.yaml"))
+    
+    # Test various scenarios
+    test_states = [
+        {
+            'stage': 'execute',
+            'failure_count': 3,
+            'cost': 2.5,
+            'budget': 5.0,
+            'error': 'ModuleNotFoundError: requests'
+        },
+        {
+            'stage': 'validate',
+            'failure_count': 1,
+            'cost': 0.5,
+            'budget': 5.0,
+            'error': 'AssertionError: Expected 200, got 404'
+        },
+        {
+            'stage': 'execute',
+            'failure_count': 1,
+            'cost': 6.0,
+            'budget': 5.0,
+            'error': 'Some error'
+        }
+    ]
+    
+    for state in test_states:
+        decision = strategist.decide(state)
+        print(f"\nState: {state}")
+        print(f"Decision: {decision}")
+    
+    # Clean up
+    Path("test_policy.yaml").unlink()

@@ -1,0 +1,350 @@
+# CAK Strategic Policy Configuration
+# This file defines how the Strategist makes decisions about workflow control
+
+# Default settings that apply unless overridden
+default:
+  # Maximum failures before escalation
+  fail_threshold: 3
+  
+  # Budget limits
+  cost_limit: 5.0
+  token_limit: 50000
+  
+  # Timing constraints
+  stage_timeout_seconds: 300  # 5 minutes per stage
+  total_timeout_minutes: 60   # 1 hour total
+  
+  # Safety settings
+  allow_destructive_operations: false
+  require_test_success_before_push: true
+  max_file_changes_per_commit: 50
+
+# Conditions that trigger immediate abort
+abort_conditions:
+  # Cost overrun
+  - "cost > budget"
+  
+  # Token limit exceeded
+  - "tokens > token_limit"
+  
+  # Critical errors
+  - "critical_error == True"
+  
+  # Security issues
+  - "'security' in error and 'vulnerability' in error"
+  
+  # Repeated oscillation
+  - "oscillation_count > 3"
+  
+  # Resource exhaustion
+  - "'disk space' in error or 'memory' in error"
+
+# Conditions that require human intervention
+escalate_conditions:
+  # Repeated failures at critical stages
+  - "stage == 'execute' and failure_count >= 3"
+  - "stage == 'validate' and failure_count >= 3"
+  
+  # Security concerns
+  - "'security' in error and failure_count >= 1"
+  - "'authentication' in error and failure_count >= 2"
+  - "'unauthorized' in error"
+  
+  # Critical validation failures
+  - "stage == 'validate' and 'critical' in error"
+  
+  # Unclear requirements
+  - "'ambiguous' in error or 'unclear' in error"
+  
+  # External dependencies
+  - "'api key' in error or 'credentials' in error"
+  
+  # Production impact
+  - "'production' in error and 'failed' in error"
+
+# Information fetching triggers
+information_indicators:
+  # Unknown API/module
+  "unknown api":
+    confidence: 0.9
+    query_template: "{error} documentation"
+    sources: ["official_docs", "github"]
+    max_results: 5
+  
+  # Missing module
+  "module not found":
+    confidence: 0.85
+    query_template: "pip install {error}"
+    sources: ["pypi", "official_docs"]
+    max_results: 3
+  
+  # Import errors
+  "importerror":
+    confidence: 0.8
+    query_template: "python {error} import"
+    sources: ["stackoverflow", "official_docs"]
+    max_results: 5
+  
+  # Configuration issues
+  "configuration":
+    confidence: 0.7
+    query_template: "{error} setup configuration"
+    sources: ["official_docs", "github"]
+    max_results: 4
+  
+  # Test failures
+  "assertion failed":
+    confidence: 0.75
+    query_template: "pytest {error} assertion"
+    sources: ["stackoverflow", "pytest_docs"]
+    max_results: 5
+
+# Stage-specific rerouting rules
+reroute_map:
+  # Validation stage reroutes
+  validate:
+    - condition: "'assertion' in error or 'assert' in error"
+      target: "reflect"
+      reason: "Test failure requires design reconsideration"
+      confidence: 0.9
+    
+    - condition: "'timeout' in error"
+      target: "execute"
+      reason: "Timeout may be transient, retry execution"
+      confidence: 0.7
+    
+    - condition: "'import' in error or 'module' in error"
+      target: "execute"
+      reason: "Missing dependency, need to fix imports"
+      confidence: 0.85
+    
+    - condition: "'performance' in error and failure_count < 2"
+      target: "decide"
+      reason: "Performance issues need optimization planning"
+      confidence: 0.8
+  
+  # Execution stage reroutes
+  execute:
+    - condition: "failure_count >= 2 and 'syntax' in error"
+      target: "decide"
+      reason: "Repeated syntax errors indicate planning issue"
+      confidence: 0.95
+    
+    - condition: "'not found' in error and 'file' in error"
+      target: "decide"
+      reason: "Missing files need planning adjustment"
+      confidence: 0.8
+    
+    - condition: "'permission' in error"
+      target: "research"
+      reason: "Permission issues need research for proper fix"
+      confidence: 0.7
+    
+    - condition: "'undefined' in error or 'not defined' in error"
+      target: "reflect"
+      reason: "Undefined references need design review"
+      confidence: 0.85
+  
+  # Reflection stage reroutes
+  reflect:
+    - condition: "'insufficient' in error or 'missing context' in error"
+      target: "research"
+      reason: "Need more research before reflection"
+      confidence: 0.9
+    
+    - condition: "failure_count >= 2"
+      target: "think"
+      reason: "Multiple reflection failures, restart thinking"
+      confidence: 0.8
+  
+  # Decision stage reroutes
+  decide:
+    - condition: "'conflict' in error or 'contradiction' in error"
+      target: "reflect"
+      reason: "Conflicting requirements need reflection"
+      confidence: 0.85
+    
+    - condition: "'resource' in error and 'unavailable' in error"
+      target: "research"
+      reason: "Resource constraints need research"
+      confidence: 0.8
+  
+  # Research stage reroutes
+  research:
+    - condition: "failure_count >= 3"
+      target: "think"
+      reason: "Research not yielding results, rethink problem"
+      confidence: 0.9
+
+# Patterns that suggest rule creation
+rule_creation_triggers:
+  # Minimum occurrences before considering
+  min_occurrences: 2
+  
+  # Stages where rule creation is allowed
+  allowed_stages:
+    - execute
+    - validate
+    - research
+  
+  # Error patterns worth automating
+  patterns:
+    - "ModuleNotFoundError"
+    - "PermissionError"
+    - "FileNotFoundError"
+    - "ConnectionError"
+    - "pip install"
+    - "requirements.txt"
+  
+  # Confidence threshold
+  min_confidence: 0.7
+
+# Performance optimization rules
+optimization:
+  # Skip stages if conditions met
+  skip_rules:
+    research:
+      - condition: "task_complexity == 'simple'"
+        reason: "Simple tasks don't need research"
+    
+    reflect:
+      - condition: "task_type == 'bugfix' and size == 'small'"
+        reason: "Small bugfixes can skip reflection"
+  
+  # Fast-track paths
+  fast_track:
+    - from: "think"
+      to: "execute"
+      condition: "task_type == 'typo_fix'"
+      reason: "Typo fixes don't need planning"
+    
+    - from: "validate"
+      to: "solidify"
+      condition: "all_tests_pass and no_warnings"
+      reason: "Clean validation can skip re-execution"
+
+# Pause conditions (temporary halts)
+pause_conditions:
+  # Rate limiting
+  rate_limit:
+    pattern: "rate limit|too many requests|429"
+    wait_seconds: 60
+    max_retries: 3
+  
+  # API cooldown
+  api_cooldown:
+    pattern: "api.*limit|quota.*exceeded"
+    wait_seconds: 300
+    max_retries: 2
+  
+  # Resource recovery
+  resource_wait:
+    pattern: "resource.*busy|locked|in use"
+    wait_seconds: 30
+    max_retries: 5
+
+# Learning and adaptation settings
+learning:
+  # Track decision outcomes
+  track_outcomes: true
+  
+  # Adjust confidence based on success
+  adaptive_confidence: true
+  
+  # Pattern detection
+  pattern_detection:
+    min_samples: 5
+    confidence_threshold: 0.8
+  
+  # Success metrics to track
+  metrics:
+    - decision_success_rate
+    - stage_completion_time
+    - reroute_effectiveness
+    - escalation_accuracy
+
+# Domain-specific overrides
+domain_overrides:
+  # Software development domain
+  software_development:
+    fail_threshold: 3
+    quality_requirements:
+      test_coverage: 80
+      lint_score: 9.0
+    preferred_tools:
+      - pytest
+      - black
+      - flake8
+  
+  # Data science domain
+  data_science:
+    fail_threshold: 4  # More exploratory, allow more failures
+    quality_requirements:
+      notebook_reproducibility: true
+      data_validation: true
+    reroute_map:
+      execute:
+        - condition: "'dataframe' in error or 'numpy' in error"
+          target: "research"
+          reason: "Data structure issues need research"
+  
+  # Quantitative trading domain
+  quantitative_trading:
+    fail_threshold: 2  # Less tolerance for failures
+    abort_conditions:
+      - "cost > budget * 0.5"  # Stricter budget
+      - "'market data' in error and 'invalid' in error"
+    escalate_conditions:
+      - "'trading' in error and failure_count >= 1"
+      - "'risk' in error and 'exceeded' in error"
+    quality_requirements:
+      sharpe_ratio_min: 1.5
+      max_drawdown: 0.15
+      backtest_required: true
+
+# Human escalation templates
+escalation_templates:
+  default: |
+    CAK needs human assistance:
+    Stage: {stage}
+    Failures: {failure_count}
+    Last Error: {error}
+    Cost So Far: ${cost:.2f}
+    Suggestion: {suggestion}
+  
+  security: |
+    SECURITY ESCALATION:
+    Stage: {stage}
+    Security Issue: {error}
+    Immediate Action Required
+    Do not proceed without review
+  
+  unclear_requirements: |
+    Requirements Clarification Needed:
+    Stage: {stage}
+    Ambiguity: {error}
+    Please provide clarification on: {unclear_aspect}
+
+# Metadata
+metadata:
+  version: "1.0.0"
+  last_updated: "2024-01-01"
+  schema_version: "1.0"
+  
+  # Policy validation rules
+  validation:
+    required_sections:
+      - default
+      - abort_conditions
+      - escalate_conditions
+    
+    value_constraints:
+      fail_threshold:
+        min: 1
+        max: 10
+      cost_limit:
+        min: 0.1
+        max: 1000.0
+      token_limit:
+        min: 1000
+        max: 1000000

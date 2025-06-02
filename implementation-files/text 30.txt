@@ -1,0 +1,471 @@
+#!/usr/bin/env python3
+"""
+snapshot_manager.py - Automatic snapshot and rollback for CAK
+
+Creates git snapshots before risky operations and provides
+easy rollback when things go wrong.
+
+Author: CAK Team
+License: MIT
+Python: 3.11+
+"""
+
+import subprocess
+import os
+import json
+import tempfile
+from pathlib import Path
+from typing import Optional, Dict, Any, List, Tuple
+from dataclasses import dataclass
+from datetime import datetime
+import logging
+import hashlib
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Snapshot:
+    """Represents a code snapshot."""
+    snapshot_id: str
+    timestamp: datetime
+    description: str
+    commit_hash: str
+    branch: str
+    dirty_files: List[str]
+    metadata: Dict[str, Any]
+
+
+class SnapshotManager:
+    """
+    Manages automatic snapshots and rollbacks using git.
+    
+    Creates lightweight snapshots before risky operations and
+    enables quick rollback when interventions are triggered.
+    """
+    
+    def __init__(self, repo_path: Path = Path.cwd()):
+        """
+        Initialize snapshot manager.
+        
+        Args:
+            repo_path: Path to git repository
+        """
+        self.repo_path = repo_path
+        self.snapshots: Dict[str, Snapshot] = {}
+        self._ensure_git_repo()
+    
+    def _ensure_git_repo(self):
+        """Ensure we're in a git repository."""
+        try:
+            result = subprocess.run(
+                ['git', 'rev-parse', '--git-dir'],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+        except subprocess.CalledProcessError:
+            raise RuntimeError(f"Not a git repository: {self.repo_path}")
+    
+    def create_snapshot(self, 
+                       description: str,
+                       metadata: Optional[Dict[str, Any]] = None) -> Snapshot:
+        """
+        Create a snapshot of current state.
+        
+        Args:
+            description: Description of why snapshot is being taken
+            metadata: Additional metadata to store
+            
+        Returns:
+            Created snapshot
+        """
+        # Get current branch
+        branch = self._get_current_branch()
+        
+        # Get list of modified files
+        dirty_files = self._get_dirty_files()
+        
+        # Create snapshot ID
+        snapshot_id = self._generate_snapshot_id(description)
+        
+        # Stash changes with snapshot ID
+        if dirty_files:
+            stash_message = f"CAK_SNAPSHOT_{snapshot_id}: {description}"
+            subprocess.run(
+                ['git', 'stash', 'push', '-m', stash_message, '--include-untracked'],
+                cwd=self.repo_path,
+                check=True
+            )
+            logger.info(f"Stashed {len(dirty_files)} files for snapshot {snapshot_id}")
+        
+        # Get current commit
+        commit_hash = self._get_current_commit()
+        
+        # Create snapshot record
+        snapshot = Snapshot(
+            snapshot_id=snapshot_id,
+            timestamp=datetime.now(),
+            description=description,
+            commit_hash=commit_hash,
+            branch=branch,
+            dirty_files=dirty_files,
+            metadata=metadata or {}
+        )
+        
+        # Store snapshot
+        self.snapshots[snapshot_id] = snapshot
+        self._save_snapshot_index()
+        
+        # Restore working directory if we stashed
+        if dirty_files:
+            subprocess.run(
+                ['git', 'stash', 'pop', '--quiet'],
+                cwd=self.repo_path,
+                check=True
+            )
+        
+        logger.info(f"Created snapshot {snapshot_id}: {description}")
+        return snapshot
+    
+    def rollback_to_snapshot(self, snapshot_id: str, keep_changes: bool = True) -> bool:
+        """
+        Rollback to a specific snapshot.
+        
+        Args:
+            snapshot_id: ID of snapshot to rollback to
+            keep_changes: Whether to keep current changes as uncommitted
+            
+        Returns:
+            True if successful
+        """
+        snapshot = self.snapshots.get(snapshot_id)
+        if not snapshot:
+            logger.error(f"Snapshot not found: {snapshot_id}")
+            return False
+        
+        try:
+            # Save current state if requested
+            if keep_changes:
+                current_dirty = self._get_dirty_files()
+                if current_dirty:
+                    subprocess.run(
+                        ['git', 'stash', 'push', '-m', f'CAK_ROLLBACK_PRESERVE_{datetime.now().isoformat()}'],
+                        cwd=self.repo_path,
+                        check=True
+                    )
+            
+            # Checkout snapshot commit
+            subprocess.run(
+                ['git', 'checkout', snapshot.commit_hash],
+                cwd=self.repo_path,
+                capture_output=True,
+                check=True
+            )
+            
+            # Find and apply snapshot stash if it exists
+            stash_list = subprocess.run(
+                ['git', 'stash', 'list'],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=True
+            ).stdout
+            
+            stash_pattern = f"CAK_SNAPSHOT_{snapshot_id}"
+            for line in stash_list.splitlines():
+                if stash_pattern in line:
+                    stash_ref = line.split(':')[0]
+                    subprocess.run(
+                        ['git', 'stash', 'apply', stash_ref],
+                        cwd=self.repo_path,
+                        check=True
+                    )
+                    break
+            
+            # Return to original branch
+            subprocess.run(
+                ['git', 'checkout', snapshot.branch],
+                cwd=self.repo_path,
+                capture_output=True,
+                check=True
+            )
+            
+            logger.info(f"Rolled back to snapshot {snapshot_id}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Rollback failed: {e}")
+            return False
+    
+    def auto_snapshot_before_command(self, command: str) -> Optional[Snapshot]:
+        """
+        Automatically create snapshot before risky command.
+        
+        Args:
+            command: Command about to be executed
+            
+        Returns:
+            Created snapshot or None if not needed
+        """
+        # Commands that warrant snapshots
+        risky_patterns = [
+            'git reset',
+            'git rebase',
+            'git merge',
+            'rm ',
+            'sed -i',
+            'find .* -exec',
+            'make clean',
+            '> ',  # File overwrite
+        ]
+        
+        if any(pattern in command for pattern in risky_patterns):
+            return self.create_snapshot(
+                f"Auto-snapshot before: {command[:50]}",
+                metadata={'command': command, 'auto': True}
+            )
+        
+        return None
+    
+    def get_recent_snapshots(self, limit: int = 10) -> List[Snapshot]:
+        """Get recent snapshots sorted by time."""
+        sorted_snapshots = sorted(
+            self.snapshots.values(),
+            key=lambda s: s.timestamp,
+            reverse=True
+        )
+        return sorted_snapshots[:limit]
+    
+    def cleanup_old_snapshots(self, keep_days: int = 7):
+        """Clean up snapshots older than specified days."""
+        cutoff = datetime.now().timestamp() - (keep_days * 86400)
+        
+        to_remove = []
+        for sid, snapshot in self.snapshots.items():
+            if snapshot.timestamp.timestamp() < cutoff:
+                to_remove.append(sid)
+        
+        for sid in to_remove:
+            # Remove from stash if exists
+            self._remove_snapshot_stash(sid)
+            del self.snapshots[sid]
+        
+        if to_remove:
+            self._save_snapshot_index()
+            logger.info(f"Cleaned up {len(to_remove)} old snapshots")
+    
+    def _get_current_branch(self) -> str:
+        """Get current git branch."""
+        result = subprocess.run(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            cwd=self.repo_path,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+    
+    def _get_current_commit(self) -> str:
+        """Get current commit hash."""
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=self.repo_path,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
+    
+    def _get_dirty_files(self) -> List[str]:
+        """Get list of modified files."""
+        result = subprocess.run(
+            ['git', 'status', '--porcelain'],
+            cwd=self.repo_path,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        files = []
+        for line in result.stdout.splitlines():
+            if line.strip():
+                # Extract filename from status line
+                parts = line.strip().split(maxsplit=1)
+                if len(parts) == 2:
+                    files.append(parts[1])
+        
+        return files
+    
+    def _generate_snapshot_id(self, description: str) -> str:
+        """Generate unique snapshot ID."""
+        content = f"{description}_{datetime.now().isoformat()}"
+        return hashlib.md5(content.encode()).hexdigest()[:12]
+    
+    def _save_snapshot_index(self):
+        """Save snapshot index to git config."""
+        index_data = {
+            sid: {
+                'timestamp': s.timestamp.isoformat(),
+                'description': s.description,
+                'commit_hash': s.commit_hash,
+                'branch': s.branch,
+                'dirty_files': s.dirty_files,
+                'metadata': s.metadata
+            }
+            for sid, s in self.snapshots.items()
+        }
+        
+        # Store in git config
+        config_key = 'cak.snapshots'
+        subprocess.run(
+            ['git', 'config', '--local', config_key, json.dumps(index_data)],
+            cwd=self.repo_path,
+            check=True
+        )
+    
+    def _load_snapshot_index(self):
+        """Load snapshot index from git config."""
+        try:
+            result = subprocess.run(
+                ['git', 'config', '--local', '--get', 'cak.snapshots'],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            
+            index_data = json.loads(result.stdout)
+            
+            for sid, data in index_data.items():
+                self.snapshots[sid] = Snapshot(
+                    snapshot_id=sid,
+                    timestamp=datetime.fromisoformat(data['timestamp']),
+                    description=data['description'],
+                    commit_hash=data['commit_hash'],
+                    branch=data['branch'],
+                    dirty_files=data['dirty_files'],
+                    metadata=data['metadata']
+                )
+                
+        except subprocess.CalledProcessError:
+            # No snapshots stored yet
+            pass
+    
+    def _remove_snapshot_stash(self, snapshot_id: str):
+        """Remove snapshot stash if it exists."""
+        stash_list = subprocess.run(
+            ['git', 'stash', 'list'],
+            cwd=self.repo_path,
+            capture_output=True,
+            text=True,
+            check=True
+        ).stdout
+        
+        stash_pattern = f"CAK_SNAPSHOT_{snapshot_id}"
+        for line in stash_list.splitlines():
+            if stash_pattern in line:
+                stash_ref = line.split(':')[0]
+                subprocess.run(
+                    ['git', 'stash', 'drop', stash_ref],
+                    cwd=self.repo_path,
+                    check=True
+                )
+                break
+
+
+class SnapshotIntegration:
+    """Integration between snapshot manager and CAK."""
+    
+    def __init__(self, cak_adapter, repo_path: Path = Path.cwd()):
+        """Initialize snapshot integration."""
+        self.cak_adapter = cak_adapter
+        self.snapshot_manager = SnapshotManager(repo_path)
+        
+        # Hook into CAK for auto-snapshots
+        self.cak_adapter.add_pre_message_hook(self._pre_intervention_snapshot)
+    
+    async def _pre_intervention_snapshot(self, message: str, context: Any):
+        """Create snapshot before intervention."""
+        if context.intervention_type.name in ['UNSAFE_OPERATION', 'FORCE_PUSH']:
+            self.snapshot_manager.create_snapshot(
+                f"Pre-intervention: {context.intervention_type.name}",
+                metadata={
+                    'intervention_type': context.intervention_type.name,
+                    'action': context.current_action
+                }
+            )
+            logger.info("Created safety snapshot before intervention")
+
+
+# CLI interface
+def main():
+    """CLI for snapshot management."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="CAK Snapshot Manager")
+    subparsers = parser.add_subparsers(dest='command', help='Commands')
+    
+    # Create snapshot
+    create_parser = subparsers.add_parser('create', help='Create snapshot')
+    create_parser.add_argument('description', help='Snapshot description')
+    
+    # List snapshots
+    list_parser = subparsers.add_parser('list', help='List snapshots')
+    list_parser.add_argument('--limit', type=int, default=10, help='Number to show')
+    
+    # Rollback
+    rollback_parser = subparsers.add_parser('rollback', help='Rollback to snapshot')
+    rollback_parser.add_argument('snapshot_id', help='Snapshot ID')
+    rollback_parser.add_argument('--discard', action='store_true', 
+                                help='Discard current changes')
+    
+    # Cleanup
+    cleanup_parser = subparsers.add_parser('cleanup', help='Clean old snapshots')
+    cleanup_parser.add_argument('--days', type=int, default=7, 
+                               help='Keep snapshots newer than N days')
+    
+    args = parser.parse_args()
+    
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
+    
+    # Execute command
+    try:
+        sm = SnapshotManager()
+        
+        if args.command == 'create':
+            snapshot = sm.create_snapshot(args.description)
+            print(f"Created snapshot: {snapshot.snapshot_id}")
+            
+        elif args.command == 'list':
+            snapshots = sm.get_recent_snapshots(args.limit)
+            for s in snapshots:
+                print(f"{s.snapshot_id} | {s.timestamp.strftime('%Y-%m-%d %H:%M')} | {s.description}")
+                
+        elif args.command == 'rollback':
+            success = sm.rollback_to_snapshot(args.snapshot_id, 
+                                            keep_changes=not args.discard)
+            if success:
+                print(f"Rolled back to snapshot: {args.snapshot_id}")
+            else:
+                print("Rollback failed")
+                
+        elif args.command == 'cleanup':
+            sm.cleanup_old_snapshots(args.days)
+            print(f"Cleaned up snapshots older than {args.days} days")
+            
+        else:
+            parser.print_help()
+            
+    except Exception as e:
+        print(f"Error: {e}")
+        return 1
+    
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

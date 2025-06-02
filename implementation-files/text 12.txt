@@ -1,0 +1,123 @@
+[tool.poetry]
+name = "cak"
+version = "0.1.0"
+description = "Claude Automation Kit - Production-ready autonomous AI agent"
+authors = ["CAK Team"]
+readme = "README.md"
+python = "^3.11"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+# Core dependencies
+pydantic = {extras = ["dotenv"], version = "^2.5.0"}
+pydantic-settings = "^2.1.0"
+sqlalchemy = "^2.0.23"
+sqlmodel = "^0.0.14"
+alembic = "^1.13.0"
+typer = "^0.9.0"
+rich = "^13.7.0"
+
+# Async and networking
+aiohttp = "^3.9.1"
+aiofiles = "^23.2.1"
+httpx = "^0.25.2"
+
+# ML and NLP
+scikit-learn = "^1.3.2"
+numpy = "^1.26.2"
+joblib = "^1.3.2"
+networkx = "^3.2.1"
+
+# Data processing
+pandas = "^2.1.4"
+beautifulsoup4 = "^4.12.2"
+lxml = "^4.9.3"
+
+# Observability
+opentelemetry-api = "^1.21.0"
+opentelemetry-sdk = "^1.21.0"
+opentelemetry-instrumentation-aiohttp-client = "^0.42b0"
+prometheus-client = "^0.19.0"
+structlog = "^23.2.0"
+
+# Security
+cryptography = "^41.0.7"
+pyyaml = "^6.0.1"
+jinja2 = "^3.1.2"
+
+# Task queue
+celery = {extras = ["redis"], version = "^5.3.4"}
+redis = "^5.0.1"
+
+# API framework
+fastapi = "^0.104.1"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-asyncio = "^0.21.1"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.12.0"
+hypothesis = "^6.92.1"
+black = "^23.12.0"
+isort = "^5.13.2"
+flake8 = "^6.1.0"
+mypy = "^1.7.1"
+bandit = "^1.7.5"
+pre-commit = "^3.6.0"
+factory-boy = "^3.3.0"
+freezegun = "^1.2.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --cov=cak --cov-report=html --cov-report=term-missing"
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.coverage.run]
+source = ["cak"]
+omit = ["*/tests/*", "*/migrations/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[tool.bandit]
+targets = ["cak"]
+skip = ["B101", "B601"]

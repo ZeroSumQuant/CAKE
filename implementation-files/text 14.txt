@@ -1,0 +1,484 @@
+#!/usr/bin/env python3
+"""
+rate_limiter.py - Token bucket rate limiter for CAK
+telemetry.py - OpenTelemetry instrumentation
+
+Production-grade rate limiting and observability.
+
+Author: CAK Team
+License: MIT
+Python: 3.11+
+"""
+
+import time
+from typing import Optional, Dict, Any, Callable
+from datetime import datetime, timedelta
+import functools
+from contextlib import contextmanager
+
+import redis.asyncio as redis
+import structlog
+from opentelemetry import trace, metrics
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+from prometheus_client import Counter, Histogram, Gauge
+
+logger = structlog.get_logger()
+
+
+class RateLimitExceeded(Exception):
+    """Rate limit exceeded exception."""
+    
+    def __init__(self, retry_after: int):
+        self.retry_after = retry_after
+        super().__init__(f"Rate limit exceeded. Retry after {retry_after} seconds")
+
+
+class RateLimiter:
+    """
+    Token bucket rate limiter using Redis.
+    
+    Provides distributed rate limiting across multiple instances.
+    """
+    
+    def __init__(self, redis_client: redis.Redis):
+        self.redis = redis_client
+        
+        # Metrics
+        self.rate_limit_checks = Counter(
+            'cak_rate_limit_checks_total',
+            'Total rate limit checks',
+            ['identifier', 'result']
+        )
+        self.rate_limit_tokens = Gauge(
+            'cak_rate_limit_tokens_remaining',
+            'Remaining tokens in bucket',
+            ['identifier']
+        )
+    
+    async def check_rate_limit(
+        self,
+        identifier: str,
+        max_requests: int,
+        window_seconds: int
+    ) -> None:
+        """
+        Check if request is allowed under rate limit.
+        
+        Args:
+            identifier: Unique identifier (user, token, IP, etc.)
+            max_requests: Maximum requests allowed
+            window_seconds: Time window in seconds
+            
+        Raises:
+            RateLimitExceeded: If rate limit exceeded
+        """
+        key = f"rate_limit:{identifier}"
+        now = time.time()
+        
+        # Lua script for atomic token bucket operation
+        lua_script = """
+        local key = KEYS[1]
+        local max_tokens = tonumber(ARGV[1])
+        local window = tonumber(ARGV[2])
+        local now = tonumber(ARGV[3])
+        local refill_rate = max_tokens / window
+        
+        local bucket = redis.call('HMGET', key, 'tokens', 'last_refill')
+        local tokens = tonumber(bucket[1]) or max_tokens
+        local last_refill = tonumber(bucket[2]) or now
+        
+        -- Calculate tokens to add based on time passed
+        local time_passed = now - last_refill
+        local tokens_to_add = time_passed * refill_rate
+        tokens = math.min(max_tokens, tokens + tokens_to_add)
+        
+        if tokens >= 1 then
+            -- Consume a token
+            tokens = tokens - 1
+            redis.call('HMSET', key, 'tokens', tokens, 'last_refill', now)
+            redis.call('EXPIRE', key, window * 2)
+            return {1, tokens}
+        else
+            -- No tokens available
+            local retry_after = math.ceil((1 - tokens) / refill_rate)
+            return {0, retry_after}
+        end
+        """
+        
+        try:
+            result = await self.redis.eval(
+                lua_script,
+                keys=[key],
+                args=[max_requests, window_seconds, now]
+            )
+            
+            allowed, remaining_or_retry = result
+            
+            if allowed == 1:
+                self.rate_limit_checks.labels(identifier=identifier, result='allowed').inc()
+                self.rate_limit_tokens.labels(identifier=identifier).set(remaining_or_retry)
+                
+                logger.debug(
+                    "Rate limit check passed",
+                    identifier=identifier,
+                    remaining_tokens=remaining_or_retry
+                )
+            else:
+                self.rate_limit_checks.labels(identifier=identifier, result='exceeded').inc()
+                
+                logger.warning(
+                    "Rate limit exceeded",
+                    identifier=identifier,
+                    retry_after=remaining_or_retry
+                )
+                
+                raise RateLimitExceeded(int(remaining_or_retry))
+                
+        except redis.RedisError as e:
+            logger.error("Redis error during rate limit check", error=str(e))
+            # Fail open - allow request if Redis is down
+            self.rate_limit_checks.labels(identifier=identifier, result='error').inc()
+    
+    async def get_limit_status(
+        self,
+        identifier: str,
+        max_requests: int,
+        window_seconds: int
+    ) -> Dict[str, Any]:
+        """Get current rate limit status without consuming token."""
+        key = f"rate_limit:{identifier}"
+        
+        try:
+            bucket = await self.redis.hgetall(key)
+            
+            if not bucket:
+                return {
+                    'tokens_remaining': max_requests,
+                    'reset_time': None,
+                    'total_limit': max_requests
+                }
+            
+            tokens = float(bucket.get(b'tokens', max_requests))
+            last_refill = float(bucket.get(b'last_refill', time.time()))
+            
+            # Calculate current tokens
+            time_passed = time.time() - last_refill
+            refill_rate = max_requests / window_seconds
+            current_tokens = min(max_requests, tokens + (time_passed * refill_rate))
+            
+            # Calculate reset time
+            if current_tokens < max_requests:
+                seconds_until_full = (max_requests - current_tokens) / refill_rate
+                reset_time = datetime.utcnow() + timedelta(seconds=seconds_until_full)
+            else:
+                reset_time = None
+            
+            return {
+                'tokens_remaining': int(current_tokens),
+                'reset_time': reset_time.isoformat() if reset_time else None,
+                'total_limit': max_requests
+            }
+            
+        except redis.RedisError as e:
+            logger.error("Redis error getting limit status", error=str(e))
+            return {
+                'tokens_remaining': None,
+                'reset_time': None,
+                'total_limit': max_requests,
+                'error': str(e)
+            }
+    
+    async def reset_limit(self, identifier: str) -> None:
+        """Reset rate limit for identifier (admin function)."""
+        key = f"rate_limit:{identifier}"
+        await self.redis.delete(key)
+        logger.info("Rate limit reset", identifier=identifier)
+
+
+# Telemetry setup
+_tracer: Optional[trace.Tracer] = None
+_meter: Optional[metrics.Meter] = None
+
+
+def setup_telemetry(service_name: str, jaeger_endpoint: Optional[str] = None):
+    """
+    Setup OpenTelemetry instrumentation.
+    
+    Args:
+        service_name: Name of the service
+        jaeger_endpoint: Optional Jaeger collector endpoint
+    """
+    global _tracer, _meter
+    
+    # Create resource
+    resource = Resource.create({
+        "service.name": service_name,
+        "service.version": "0.1.0",
+    })
+    
+    # Setup tracing
+    trace_provider = TracerProvider(resource=resource)
+    
+    if jaeger_endpoint:
+        jaeger_exporter = JaegerExporter(
+            collector_endpoint=jaeger_endpoint,
+        )
+        span_processor = BatchSpanProcessor(jaeger_exporter)
+        trace_provider.add_span_processor(span_processor)
+    
+    trace.set_tracer_provider(trace_provider)
+    _tracer = trace.get_tracer(__name__)
+    
+    # Setup metrics
+    prometheus_reader = PrometheusMetricReader()
+    metric_provider = MeterProvider(
+        resource=resource,
+        metric_readers=[prometheus_reader]
+    )
+    metrics.set_meter_provider(metric_provider)
+    _meter = metrics.get_meter(__name__)
+    
+    # Auto-instrument libraries
+    AioHttpClientInstrumentor().instrument()
+    
+    logger.info(
+        "Telemetry initialized",
+        service_name=service_name,
+        jaeger_enabled=bool(jaeger_endpoint)
+    )
+
+
+def trace_operation(operation_name: str):
+    """
+    Decorator to trace async operations.
+    
+    Usage:
+        @trace_operation("fetch_data")
+        async def fetch_data():
+            ...
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            if not _tracer:
+                return await func(*args, **kwargs)
+            
+            with _tracer.start_as_current_span(
+                operation_name,
+                attributes={
+                    "function.name": func.__name__,
+                    "function.module": func.__module__,
+                }
+            ) as span:
+                try:
+                    result = await func(*args, **kwargs)
+                    span.set_status(trace.Status(trace.StatusCode.OK))
+                    return result
+                except Exception as e:
+                    span.set_status(
+                        trace.Status(
+                            trace.StatusCode.ERROR,
+                            str(e)
+                        )
+                    )
+                    span.record_exception(e)
+                    raise
+        
+        return wrapper
+    return decorator
+
+
+def record_metric(metric_name: str, value: float, unit: str = "1", attributes: Optional[Dict[str, str]] = None):
+    """Record a metric value."""
+    if not _meter:
+        return
+    
+    # Get or create metric
+    if unit == "ms":
+        histogram = _meter.create_histogram(
+            name=f"cak.{metric_name}",
+            unit=unit,
+            description=f"Histogram of {metric_name}"
+        )
+        histogram.record(value, attributes=attributes or {})
+    else:
+        counter = _meter.create_counter(
+            name=f"cak.{metric_name}",
+            unit=unit,
+            description=f"Counter for {metric_name}"
+        )
+        counter.add(value, attributes=attributes or {})
+
+
+@contextmanager
+def trace_span(span_name: str, attributes: Optional[Dict[str, Any]] = None):
+    """Context manager for tracing synchronous operations."""
+    if not _tracer:
+        yield
+        return
+    
+    with _tracer.start_as_current_span(span_name, attributes=attributes) as span:
+        try:
+            yield span
+            span.set_status(trace.Status(trace.StatusCode.OK))
+        except Exception as e:
+            span.set_status(
+                trace.Status(trace.StatusCode.ERROR, str(e))
+            )
+            span.record_exception(e)
+            raise
+
+
+class TelemetryMiddleware:
+    """Middleware to add telemetry to requests."""
+    
+    def __init__(self, app):
+        self.app = app
+    
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        
+        # Extract request info
+        method = scope["method"]
+        path = scope["path"]
+        
+        # Start span
+        with trace_span(
+            f"{method} {path}",
+            attributes={
+                "http.method": method,
+                "http.url": path,
+                "http.scheme": scope["scheme"],
+            }
+        ) as span:
+            # Track response status
+            status_code = None
+            
+            async def send_wrapper(message):
+                nonlocal status_code
+                if message["type"] == "http.response.start":
+                    status_code = message["status"]
+                    span.set_attribute("http.status_code", status_code)
+                await send(message)
+            
+            # Process request
+            start_time = time.time()
+            try:
+                await self.app(scope, receive, send_wrapper)
+            finally:
+                # Record metrics
+                duration_ms = (time.time() - start_time) * 1000
+                record_metric(
+                    "http_request_duration",
+                    duration_ms,
+                    unit="ms",
+                    attributes={
+                        "method": method,
+                        "path": path,
+                        "status": str(status_code) if status_code else "unknown"
+                    }
+                )
+
+
+# Claude API specific rate limiter
+class ClaudeRateLimiter:
+    """
+    Specialized rate limiter for Claude API calls.
+    
+    Implements exponential backoff and cost tracking.
+    """
+    
+    def __init__(self, redis_client: redis.Redis, max_rpm: int = 10):
+        self.redis = redis_client
+        self.max_rpm = max_rpm
+        self.base_limiter = RateLimiter(redis_client)
+        
+        # Metrics
+        self.claude_calls = Counter(
+            'cak_claude_api_calls_total',
+            'Total Claude API calls',
+            ['model', 'status']
+        )
+        self.claude_tokens = Counter(
+            'cak_claude_tokens_total',
+            'Total Claude tokens used',
+            ['model', 'type']
+        )
+        self.claude_cost = Counter(
+            'cak_claude_cost_dollars_total',
+            'Total Claude API cost in dollars'
+        )
+    
+    async def check_claude_limit(self, model: str = "claude-3-opus") -> None:
+        """Check Claude-specific rate limits."""
+        # Check requests per minute
+        await self.base_limiter.check_rate_limit(
+            f"claude:{model}",
+            self.max_rpm,
+            60
+        )
+    
+    async def record_usage(
+        self,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        success: bool = True
+    ) -> float:
+        """Record Claude API usage and calculate cost."""
+        # Record metrics
+        status = "success" if success else "error"
+        self.claude_calls.labels(model=model, status=status).inc()
+        self.claude_tokens.labels(model=model, type="prompt").inc(prompt_tokens)
+        self.claude_tokens.labels(model=model, type="completion").inc(completion_tokens)
+        
+        # Calculate cost (simplified - would use actual pricing)
+        cost_per_1k_prompt = 0.015
+        cost_per_1k_completion = 0.075
+        
+        cost = (prompt_tokens / 1000 * cost_per_1k_prompt + 
+                completion_tokens / 1000 * cost_per_1k_completion)
+        
+        self.claude_cost.inc(cost)
+        
+        # Store in Redis for tracking
+        key = f"claude:usage:{datetime.utcnow().strftime('%Y-%m-%d')}"
+        await self.redis.hincrby(key, "calls", 1)
+        await self.redis.hincrbyfloat(key, "cost", cost)
+        await self.redis.expire(key, 86400 * 30)  # Keep for 30 days
+        
+        return cost
+    
+    async def get_usage_stats(self, days: int = 7) -> Dict[str, Any]:
+        """Get Claude usage statistics."""
+        stats = {
+            'daily': [],
+            'total_calls': 0,
+            'total_cost': 0.0
+        }
+        
+        for i in range(days):
+            date = (datetime.utcnow() - timedelta(days=i)).strftime('%Y-%m-%d')
+            key = f"claude:usage:{date}"
+            
+            data = await self.redis.hgetall(key)
+            if data:
+                daily_stats = {
+                    'date': date,
+                    'calls': int(data.get(b'calls', 0)),
+                    'cost': float(data.get(b'cost', 0))
+                }
+                stats['daily'].append(daily_stats)
+                stats['total_calls'] += daily_stats['calls']
+                stats['total_cost'] += daily_stats['cost']
+        
+        return stats

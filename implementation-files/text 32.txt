@@ -1,0 +1,488 @@
+if intervention_context:
+            # Generate operator message
+            operator_message = self.operator.build_message(intervention_context)
+            
+            # Record intervention
+            self._record_intervention(intervention_context, operator_message)
+            
+            # Execute pre-message hooks
+            for hook in self.pre_message_hooks:
+                await hook(operator_message, intervention_context)
+            
+            return operator_message
+        
+        return None
+    
+    async def inject_system_message(self, message: str, priority: bool = True):
+        """
+        Inject a system message into Claude's context.
+        
+        Args:
+            message: The message to inject
+            priority: Whether this is high priority (prepend vs append)
+        """
+        system_msg = ConversationMessage(
+            role=MessageRole.SYSTEM,
+            content=message,
+            metadata={'priority': priority}
+        )
+        
+        if priority:
+            # Prepend for immediate attention
+            self.conversation_history.insert(0, system_msg)
+        else:
+            # Append for general context
+            self.conversation_history.append(system_msg)
+        
+        logger.info(f"Injected system message: {message[:100]}...")
+    
+    def update_task_context(self, task_context: Dict[str, Any]):
+        """Update the current task context."""
+        self.current_state.task_context = task_context
+        logger.debug(f"Updated task context: {task_context}")
+    
+    def update_stage(self, stage: str):
+        """Update current TRRDEVS stage."""
+        self.current_state.current_stage = stage
+        logger.debug(f"Updated stage to: {stage}")
+    
+    def report_error(self, error: Dict[str, Any]) -> Optional[str]:
+        """
+        Report an error and check if it's a repeat.
+        
+        Args:
+            error: Error details
+            
+        Returns:
+            Operator message if this is a repeat error
+        """
+        # Update state
+        self.current_state.error_state = error
+        
+        # Record in RecallDB
+        error_id = self.recall_db.record_error(
+            error_type=error.get('type', 'UnknownError'),
+            error_message=error.get('message', ''),
+            file_path=error.get('file_path', 'unknown'),
+            line_number=error.get('line_number'),
+            attempted_fix=error.get('attempted_fix'),
+            context={
+                'stage': self.current_state.current_stage,
+                'task': self.current_state.task_context.get('description', '')
+            }
+        )
+        
+        # Check if this is a repeat
+        if self.recall_db.has_seen_error(
+            error.get('type', 'UnknownError'),
+            error.get('message', ''),
+            error.get('file_path'),
+            threshold_hours=24
+        ):
+            # Generate intervention
+            similar_errors = self.recall_db.get_similar_errors(
+                error.get('type', 'UnknownError'),
+                error.get('file_path')
+            )
+            
+            context = InterventionContext(
+                intervention_type=InterventionType.REPEAT_ERROR,
+                current_action=self.current_state.current_action,
+                error_details=error,
+                previous_attempts=similar_errors
+            )
+            
+            return self.operator.build_message(context)
+        
+        return None
+    
+    def update_ci_status(self, ci_status: Dict[str, Any]) -> Optional[str]:
+        """
+        Update CI status and check for violations.
+        
+        Returns:
+            Operator message if trying to push with failing CI
+        """
+        self.current_state.ci_status = ci_status
+        
+        # FIX: Track CI state continuously, not just on push
+        # Store CI state for future checks
+        self.current_state.metadata['last_ci_check'] = datetime.now()
+        
+        # If CI is failing, warn preemptively
+        if not ci_status.get('passing', True):
+            # Check if user is about to push (look at command queue)
+            recent_commands = self.current_state.command_queue[-5:]
+            git_activity = any('git' in cmd for cmd in recent_commands)
+            
+            if git_activity or self.current_state.current_action in ['git_push', 'git_commit']:
+                context = InterventionContext(
+                    intervention_type=InterventionType.CI_FAILURE,
+                    current_action=self.current_state.current_action,
+                    ci_status=ci_status
+                )
+                
+                return self.operator.build_message(context)
+        
+        return None
+    
+    def update_linter_status(self, linter_status: Dict[str, Any]) -> Optional[str]:
+        """
+        Update linter status and check for violations.
+        
+        Returns:
+            Operator message if ignoring linter violations
+        """
+        self.current_state.linter_status = linter_status
+        
+        # Check if trying to commit/push with linter violations
+        if (self.current_state.current_action in ['git_commit', 'git_push'] and
+            linter_status.get('violations')):
+            
+            context = InterventionContext(
+                intervention_type=InterventionType.LINTER_VIOLATION,
+                current_action=self.current_state.current_action,
+                error_details={
+                    'linter': linter_status.get('linter_name', 'linter'),
+                    'violation_count': len(linter_status.get('violations', [])),
+                    'violations': linter_status.get('violations', [])
+                }
+            )
+            
+            return self.operator.build_message(context)
+        
+        return None
+    
+    def check_feature_creep(self, changes: Dict[str, Any]) -> Optional[str]:
+        """
+        Check for feature creep in current changes.
+        
+        Returns:
+            Operator message if feature creep detected
+        """
+        self.current_state.changes = changes
+        
+        # Only check during bug fixes
+        if self.current_state.task_context.get('type') != 'bug_fix':
+            return None
+        
+        # Analyze changes
+        original_scope = self.current_state.task_context.get('scope', [])
+        added_features = []
+        
+        for changed_file in changes.get('files_modified', []):
+            in_scope = any(scope_item in changed_file for scope_item in original_scope)
+            if not in_scope:
+                added_features.append(changed_file)
+        
+        if added_features:
+            context = InterventionContext(
+                intervention_type=InterventionType.FEATURE_CREEP,
+                current_action='coding',
+                task_context={
+                    'original_issue': self.current_state.task_context.get('description'),
+                    'added_features': added_features
+                }
+            )
+            
+            return self.operator.build_message(context)
+        
+        return None
+    
+    def get_relevant_knowledge(self) -> List[Dict[str, Any]]:
+        """Get relevant knowledge for current context."""
+        current_context = {
+            'stage': self.current_state.current_stage,
+            'domain': self.current_state.task_context.get('domain', 'general'),
+            'error': self.current_state.error_state.get('message', '') if self.current_state.error_state else '',
+            'task': self.current_state.task_context.get('description', '')
+        }
+        
+        return self.knowledge_ledger.get_relevant_knowledge(
+            current_context,
+            max_results=5
+        )
+    
+    async def validate_task_convergence(self, 
+                                      stage_outputs: Dict[str, Any],
+                                      artifacts: List[str]) -> Dict[str, Any]:
+        """
+        Validate if the task is converging properly.
+        
+        Returns:
+            Validation report with recommendations
+        """
+        report = await self.validator.validate_convergence(
+            self.current_state.task_context.get('description', ''),
+            stage_outputs,
+            artifacts
+        )
+        
+        # Generate intervention if needed
+        if report.status.name in ['DIVERGED', 'INCOMPLETE']:
+            recommendations = '\n'.join(report.recommendations[:3])
+            intervention_msg = f"Operator (CAK): Task validation failed. {recommendations}"
+            await self.inject_system_message(intervention_msg)
+        
+        return report.to_dict()
+    
+    def add_pre_message_hook(self, hook: Callable):
+        """Add a hook to be called before message injection."""
+        self.pre_message_hooks.append(hook)
+    
+    def add_post_message_hook(self, hook: Callable):
+        """Add a hook to be called after message injection."""
+        self.post_message_hooks.append(hook)
+    
+    def get_intervention_history(self) -> List[Dict[str, Any]]:
+        """Get history of interventions."""
+        return [
+            {
+                'timestamp': msg.timestamp.isoformat(),
+                'content': msg.content,
+                'metadata': msg.metadata
+            }
+            for msg in self.conversation_history
+            if msg.role in [MessageRole.SYSTEM, MessageRole.OPERATOR]
+        ]
+    
+    def get_system_status(self) -> Dict[str, Any]:
+        """Get current system status."""
+        return {
+            'current_stage': self.current_state.current_stage,
+            'current_action': self.current_state.current_action,
+            'intervention_count': self.intervention_count,
+            'last_intervention': self.last_intervention_time.isoformat() if self.last_intervention_time else None,
+            'recall_db_stats': self.recall_db.get_statistics(),
+            'operator_stats': self.operator.get_intervention_stats(),
+            'intervention_enabled': self.intervention_enabled
+        }
+    
+    def _update_state_from_action(self, action: Dict[str, Any]):
+        """Update internal state from Claude's action."""
+        self.current_state.current_action = action.get('type', 'unknown')
+        
+        # Update specific state components
+        if 'stage' in action:
+            self.current_state.current_stage = action['stage']
+        
+        if 'error' in action:
+            self.current_state.error_state = action['error']
+        
+        if 'changes' in action:
+            self.current_state.changes = action['changes']
+        
+        if 'command' in action:
+            self.current_state.command_queue.append(action['command'])
+    
+    def _state_to_dict(self) -> Dict[str, Any]:
+        """Convert current state to dictionary for analysis."""
+        # FIX: Null-safe error state access
+        error_state = self.current_state.error_state or {}
+        
+        return {
+            'stage': self.current_state.current_stage,
+            'action': self.current_state.current_action,
+            'task_context': self.current_state.task_context,
+            'error': error_state.get('message', '') if error_state else None,
+            'file_path': error_state.get('file_path', '') if error_state else None,
+            'ci_status': self.current_state.ci_status,
+            'linter_status': self.current_state.linter_status,
+            'coverage_metrics': self.current_state.coverage_metrics,
+            'changes': self.current_state.changes,
+            'command': self.current_state.command_queue[-1] if self.current_state.command_queue else None
+        }
+    
+    def _record_intervention(self, context: InterventionContext, message: str):
+        """Record an intervention."""
+        self.intervention_count += 1
+        self.last_intervention_time = datetime.now()
+        
+        # Add to conversation history
+        self.conversation_history.append(ConversationMessage(
+            role=MessageRole.OPERATOR,
+            content=message,
+            metadata={
+                'intervention_type': context.intervention_type.name,
+                'context': context.__dict__
+            }
+        ))
+        
+        # Execute post-message hooks
+        for hook in self.post_message_hooks:
+            hook(message, context)
+    
+    async def cleanup(self):
+        """Clean up resources."""
+        if self.auto_cleanup:
+            cleaned = self.recall_db.cleanup_expired()
+            logger.info(f"Cleaned up {cleaned} expired records")
+
+
+# Integration helper functions
+def create_cak_system(config_path: Path) -> CAKAdapter:
+    """
+    Create a fully configured CAK system.
+    
+    Args:
+        config_path: Path to configuration directory
+        
+    Returns:
+        Configured CAKAdapter instance
+    """
+    # Load configuration
+    config_file = config_path / "cak_config.yaml"
+    if config_file.exists():
+        import yaml
+        with open(config_file) as f:
+            config = yaml.safe_load(f)
+    else:
+        config = {}
+    
+    # Create components
+    operator = OperatorBuilder(strictness_level=config.get('strictness', 0.9))  # FIX: Use config value
+    recall_db = RecallDB(
+        config_path / "recall.db",
+        ttl_hours=config.get('recall_ttl_hours', 24)
+    )
+    knowledge_ledger = CrossTaskKnowledgeLedger(config_path / "knowledge")
+    
+    # FIX: Create proper mock validator for testing
+    class MockValidator:
+        async def validate_convergence(self, task, outputs, artifacts):
+            from dataclasses import dataclass
+            from enum import Enum, auto
+            
+            class ConvergenceStatus(Enum):
+                CONVERGED = auto()
+            
+            @dataclass
+            class ConvergenceReport:
+                status: ConvergenceStatus
+                confidence: float
+                requirements_met: float
+                critical_gaps: list
+                validation_summary: dict
+                recommendations: list
+                evidence: dict
+                
+                def to_dict(self):
+                    return {
+                        'status': self.status.name,
+                        'confidence': self.confidence,
+                        'requirements_met': self.requirements_met,
+                        'critical_gaps': self.critical_gaps,
+                        'validation_summary': self.validation_summary,
+                        'recommendations': self.recommendations,
+                        'evidence': self.evidence
+                    }
+            
+            return ConvergenceReport(
+                status=ConvergenceStatus.CONVERGED,
+                confidence=0.9,
+                requirements_met=0.9,
+                critical_gaps=[],
+                validation_summary={},
+                recommendations=[],
+                evidence={}
+            )
+    
+    validator = MockValidator()
+    
+    # Create adapter
+    adapter = CAKAdapter(
+        operator=operator,
+        recall_db=recall_db,
+        knowledge_ledger=knowledge_ledger,
+        validator=validator,
+        config=config
+    )
+    
+    # Add default hooks if configured
+    if config.get('enable_logging_hook', True):
+        def log_intervention(message, context):
+            logger.info(f"Intervention: {message}")
+        adapter.add_post_message_hook(log_intervention)
+    
+    return adapter
+
+
+# Example usage
+if __name__ == "__main__":
+    import tempfile
+    
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
+    
+    async def test_adapter():
+        # Create temporary directory for testing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create CAK system
+            cak = create_cak_system(Path(temp_dir))
+            
+            # Set task context
+            cak.update_task_context({
+                'type': 'bug_fix',
+                'description': 'Fix login timeout bug',
+                'scope': ['auth.py', 'login.py'],
+                'domain': 'software_development'
+            })
+            
+            # Simulate Claude trying something
+            print("=== Testing Repeat Error Detection ===")
+            
+            # First error
+            error_msg = cak.report_error({
+                'type': 'ModuleNotFoundError',
+                'message': "ModuleNotFoundError: No module named 'requests'",
+                'file_path': 'main.py',
+                'line_number': 42,
+                'attempted_fix': 'pip install request'  # typo
+            })
+            print(f"First error: {error_msg}")  # Should be None
+            
+            # Same error again
+            error_msg = cak.report_error({
+                'type': 'ModuleNotFoundError',
+                'message': "ModuleNotFoundError: No module named 'requests'",
+                'file_path': 'main.py',
+                'line_number': 42,
+                'attempted_fix': 'pip install requests-lib'  # wrong name
+            })
+            print(f"Repeat error: {error_msg}")  # Should get intervention
+            
+            print("\n=== Testing CI Failure Prevention ===")
+            
+            # Update CI status
+            cak.update_ci_status({
+                'passing': False,
+                'failing_tests': ['test_login.py', 'test_auth.py'],
+                'test_command': 'pytest tests/ -xvs'
+            })
+            
+            # Try to push
+            action = {
+                'type': 'git_push',
+                'stage': 'execute'
+            }
+            intervention = await cak.process_claude_action(action)
+            print(f"CI intervention: {intervention}")
+            
+            print("\n=== Testing Feature Creep Detection ===")
+            
+            # Report changes outside scope
+            creep_msg = cak.check_feature_creep({
+                'files_modified': ['auth.py', 'ui/theme.py', 'ui/avatar.py']
+            })
+            print(f"Feature creep: {creep_msg}")
+            
+            # Get system status
+            print("\n=== System Status ===")
+            status = cak.get_system_status()
+            print(json.dumps(status, indent=2))
+            
+            # Clean up
+            await cak.cleanup()
+    
+    # Run test
+    asyncio.run(test_adapter())

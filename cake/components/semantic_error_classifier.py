@@ -1,0 +1,1596 @@
+#!/usr/bin/env python3
+"""
+semantic_error_classifier.py - Intelligent Error Understanding for CAKE
+
+Provides semantic classification of errors beyond simple string matching.
+Uses NLP techniques, error taxonomy, contextual analysis, and machine learning
+to understand what errors actually mean and how they relate to solutions.
+
+Author: CAKE Team
+License: MIT
+Python: 3.11+
+"""
+
+import re
+import json
+import logging
+import hashlib
+import pickle
+from typing import Dict, List, Optional, Any, Tuple, Set, Union
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timedelta
+from pathlib import Path
+from enum import Enum, auto
+from collections import defaultdict, Counter
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import KMeans
+from sklearn.decomposition import LatentDirichletAllocation
+import networkx as nx
+
+# Configure module logger
+logger = logging.getLogger(__name__)
+
+
+class ErrorSeverity(Enum):
+    """Error severity levels."""
+    CRITICAL = auto()     # System-breaking errors
+    HIGH = auto()        # Major functionality issues
+    MEDIUM = auto()      # Minor functionality issues
+    LOW = auto()         # Warnings or style issues
+    INFO = auto()        # Informational messages
+
+
+class ErrorCategory(Enum):
+    """High-level error categories."""
+    DEPENDENCY = auto()       # Missing modules, packages, libraries
+    PERMISSION = auto()       # Access, authentication, authorization
+    SYNTAX = auto()          # Code syntax and structure
+    RUNTIME = auto()         # Runtime exceptions and failures
+    NETWORK = auto()         # Connection, timeout, API issues
+    VALIDATION = auto()      # Data validation, assertions, tests
+    RESOURCE = auto()        # Memory, disk, CPU constraints
+    CONFIGURATION = auto()   # Setup, environment, config issues
+    LOGIC = auto()           # Business logic, algorithm errors
+    INTEGRATION = auto()     # Service integration, API mismatches
+
+
+@dataclass
+class ErrorSignature:
+    """
+    Semantic signature of an error for intelligent matching.
+    
+    Attributes:
+        signature_id: Unique identifier for this signature
+        error_type: Primary error type (e.g., ModuleNotFoundError)
+        category: High-level category
+        severity: Error severity level
+        semantic_tags: NLP-derived semantic tags
+        context_patterns: Patterns in error context
+        solution_hints: Hints about likely solutions
+        confidence: Confidence in this classification
+        example_messages: Example error messages
+        related_signatures: Related error signatures
+        metadata: Additional classification data
+    """
+    signature_id: str
+    error_type: str
+    category: ErrorCategory
+    severity: ErrorSeverity
+    semantic_tags: Set[str]
+    context_patterns: List[str]
+    solution_hints: List[str]
+    confidence: float
+    example_messages: List[str] = field(default_factory=list)
+    related_signatures: Set[str] = field(default_factory=set)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.now)
+    last_seen: datetime = field(default_factory=datetime.now)
+    occurrence_count: int = 0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        data = asdict(self)
+        data['category'] = self.category.name
+        data['severity'] = self.severity.name
+        data['semantic_tags'] = list(self.semantic_tags)
+        data['related_signatures'] = list(self.related_signatures)
+        data['created_at'] = self.created_at.isoformat()
+        data['last_seen'] = self.last_seen.isoformat()
+        return data
+
+
+@dataclass
+class ErrorClassification:
+    """
+    Result of error classification.
+    
+    Attributes:
+        original_error: Original error message
+        matched_signature: Best matching error signature
+        confidence: Confidence in the match
+        semantic_analysis: Detailed semantic analysis
+        suggested_actions: Recommended actions
+        context_insights: Insights from error context
+        related_errors: Similar errors in database
+        urgency_score: How urgently this needs attention
+    """
+    original_error: str
+    matched_signature: Optional[ErrorSignature]
+    confidence: float
+    semantic_analysis: Dict[str, Any]
+    suggested_actions: List[Dict[str, Any]]
+    context_insights: Dict[str, Any]
+    related_errors: List[str]
+    urgency_score: float
+    classification_metadata: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+class ErrorPatternExtractor:
+    """
+    Extracts patterns and features from error messages.
+    """
+    
+    # Common error patterns with semantic meaning
+    ERROR_PATTERNS = {
+        'module_not_found': {
+            'patterns': [
+                r"(?i)modulenotfounderror.*?['\"]([^'\"]+)['\"]",
+                r"(?i)no module named ['\"]([^'\"]+)['\"]",
+                r"(?i)import error.*?['\"]([^'\"]+)['\"]"
+            ],
+            'category': ErrorCategory.DEPENDENCY,
+            'severity': ErrorSeverity.HIGH,
+            'semantic_tags': {'dependency', 'import', 'missing_package'},
+            'solution_hints': ['install_package', 'check_requirements', 'virtual_environment']
+        },
+        'permission_denied': {
+            'patterns': [
+                r"(?i)permission denied.*?['\"]([^'\"]+)['\"]",
+                r"(?i)access denied.*?['\"]([^'\"]+)['\"]",
+                r"(?i)errno 13.*permission denied"
+            ],
+            'category': ErrorCategory.PERMISSION,
+            'severity': ErrorSeverity.HIGH,
+            'semantic_tags': {'permission', 'access', 'file_system'},
+            'solution_hints': ['change_permissions', 'check_ownership', 'run_as_admin']
+        },
+        'file_not_found': {
+            'patterns': [
+                r"(?i)filenotfounderror.*?['\"]([^'\"]+)['\"]",
+                r"(?i)no such file or directory.*?['\"]([^'\"]+)['\"]"
+            ],
+            'category': ErrorCategory.RESOURCE,
+            'severity': ErrorSeverity.MEDIUM,
+            'semantic_tags': {'file_system', 'missing_file', 'path'},
+            'solution_hints': ['check_path', 'create_file', 'verify_working_directory']
+        },
+        'syntax_error': {
+            'patterns': [
+                r"(?i)syntaxerror.*?line (\d+)",
+                r"(?i)invalid syntax.*?line (\d+)",
+                r"(?i)unexpected token.*?line (\d+)"
+            ],
+            'category': ErrorCategory.SYNTAX,
+            'severity': ErrorSeverity.HIGH,
+            'semantic_tags': {'syntax', 'parsing', 'code_structure'},
+            'solution_hints': ['check_syntax', 'review_indentation', 'validate_brackets']
+        },
+        'connection_error': {
+            'patterns': [
+                r"(?i)connection.*?error.*?(\S+)",
+                r"(?i)timeout.*?connecting.*?(\S+)",
+                r"(?i)failed to connect.*?(\S+)"
+            ],
+            'category': ErrorCategory.NETWORK,
+            'severity': ErrorSeverity.MEDIUM,
+            'semantic_tags': {'network', 'connection', 'timeout'},
+            'solution_hints': ['check_network', 'verify_endpoint', 'retry_with_backoff']
+        },
+        'assertion_error': {
+            'patterns': [
+                r"(?i)assertionerror:?\s*(.*)",
+                r"(?i)assertion failed:?\s*(.*)",
+                r"(?i)test.*?failed.*?assertion"
+            ],
+            'category': ErrorCategory.VALIDATION,
+            'severity': ErrorSeverity.MEDIUM,
+            'semantic_tags': {'testing', 'validation', 'assertion'},
+            'solution_hints': ['review_test_logic', 'check_expected_values', 'validate_data']
+        },
+        'type_error': {
+            'patterns': [
+                r"(?i)typeerror.*?expected (\w+).*?got (\w+)",
+                r"(?i)typeerror.*?unsupported operand",
+                r"(?i)typeerror.*?not callable"
+            ],
+            'category': ErrorCategory.LOGIC,
+            'severity': ErrorSeverity.MEDIUM,
+            'semantic_tags': {'types', 'data_types', 'type_mismatch'},
+            'solution_hints': ['check_types', 'add_type_conversion', 'validate_input']
+        },
+        'value_error': {
+            'patterns': [
+                r"(?i)valueerror.*?invalid literal.*?(\w+)",
+                r"(?i)valueerror.*?cannot convert",
+                r"(?i)valueerror.*?invalid value"
+            ],
+            'category': ErrorCategory.VALIDATION,
+            'severity': ErrorSeverity.MEDIUM,
+            'semantic_tags': {'validation', 'data_conversion', 'invalid_data'},
+            'solution_hints': ['validate_input_data', 'add_error_handling', 'check_data_format']
+        },
+        'memory_error': {
+            'patterns': [
+                r"(?i)memoryerror",
+                r"(?i)out of memory",
+                r"(?i)cannot allocate memory"
+            ],
+            'category': ErrorCategory.RESOURCE,
+            'severity': ErrorSeverity.CRITICAL,
+            'semantic_tags': {'memory', 'resource_exhaustion', 'performance'},
+            'solution_hints': ['optimize_memory_usage', 'process_in_chunks', 'increase_resources']
+        },
+        'api_error': {
+            'patterns': [
+                r"(?i)api.*?error.*?(\d{3})",
+                r"(?i)http.*?error.*?(\d{3})",
+                r"(?i)status code.*?(\d{3})"
+            ],
+            'category': ErrorCategory.INTEGRATION,
+            'severity': ErrorSeverity.MEDIUM,
+            'semantic_tags': {'api', 'http', 'service_integration'},
+            'solution_hints': ['check_api_credentials', 'verify_endpoint', 'handle_rate_limits']
+        },
+        'configuration_error': {
+            'patterns': [
+                r"(?i)configuration.*?error",
+                r"(?i)config.*?not found",
+                r"(?i)invalid.*?configuration"
+            ],
+            'category': ErrorCategory.CONFIGURATION,
+            'severity': ErrorSeverity.HIGH,
+            'semantic_tags': {'configuration', 'setup', 'environment'},
+            'solution_hints': ['check_config_file', 'verify_environment_variables', 'validate_settings']
+        }
+    }
+    
+    def __init__(self):
+        """Initialize pattern extractor."""
+        self.compiled_patterns = {}
+        self._compile_patterns()
+        
+        # NLP components
+        self.tfidf_vectorizer = TfidfVectorizer(
+            max_features=1000,
+            stop_words='english',
+            ngram_range=(1, 3),
+            token_pattern=r'\b[a-zA-Z_][a-zA-Z0-9_]*\b'  # Include underscores
+        )
+        
+        self.semantic_vectorizer = CountVectorizer(
+            max_features=500,
+            token_pattern=r'\b[a-zA-Z_][a-zA-Z0-9_]*\b'
+        )
+        
+        # Semantic clustering for error grouping
+        self.error_clusterer = KMeans(n_clusters=20, random_state=42)
+        self.topic_model = LatentDirichletAllocation(n_components=15, random_state=42)
+        
+        # Fitted indicators
+        self.is_fitted = False
+        
+    def _compile_patterns(self):
+        """Compile regex patterns for efficiency."""
+        for pattern_name, pattern_info in self.ERROR_PATTERNS.items():
+            self.compiled_patterns[pattern_name] = {
+                'regexes': [re.compile(p, re.IGNORECASE | re.DOTALL) for p in pattern_info['patterns']],
+                'metadata': {k: v for k, v in pattern_info.items() if k != 'patterns'}
+            }
+    
+    def extract_error_features(self, error_message: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Extract comprehensive features from error message.
+        
+        Args:
+            error_message: The error message to analyze
+            context: Additional context (stage, domain, etc.)
+            
+        Returns:
+            Dictionary of extracted features
+        """
+        features = {
+            'original_message': error_message,
+            'normalized_message': self._normalize_error_message(error_message),
+            'error_type': self._extract_error_type(error_message),
+            'matched_patterns': self._match_known_patterns(error_message),
+            'semantic_tokens': self._extract_semantic_tokens(error_message),
+            'technical_entities': self._extract_technical_entities(error_message),
+            'severity_indicators': self._extract_severity_indicators(error_message),
+            'context_clues': self._extract_context_clues(error_message, context),
+            'actionable_elements': self._extract_actionable_elements(error_message),
+            'error_hierarchy': self._build_error_hierarchy(error_message),
+            'metadata': {
+                'message_length': len(error_message),
+                'word_count': len(error_message.split()),
+                'has_stack_trace': 'traceback' in error_message.lower(),
+                'has_line_numbers': bool(re.search(r'line \d+', error_message)),
+                'has_file_paths': bool(re.search(r'[/\\][\w\-_.]+[/\\]', error_message)),
+                'extraction_timestamp': datetime.now().isoformat()
+            }
+        }
+        
+        return features
+    
+    def _normalize_error_message(self, error_message: str) -> str:
+        """Normalize error message for better matching."""
+        normalized = error_message.lower()
+        
+        # Replace specific values with placeholders
+        normalized = re.sub(r"'[^']*'", "'<VALUE>'", normalized)
+        normalized = re.sub(r'"[^"]*"', '"<VALUE>"', normalized)
+        normalized = re.sub(r'\b\d+\b', '<NUMBER>', normalized)
+        normalized = re.sub(r'/[^\s]+', '<PATH>', normalized)
+        normalized = re.sub(r'[0-9a-f]{8,}', '<HASH>', normalized)
+        
+        # Normalize whitespace
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        
+        return normalized
+    
+    def _extract_error_type(self, error_message: str) -> str:
+        """Extract the primary error type."""
+        # Look for Python exception types
+        python_exceptions = re.search(r'(\w+Error|\w+Exception)', error_message)
+        if python_exceptions:
+            return python_exceptions.group(1)
+        
+        # Look for HTTP status codes
+        http_status = re.search(r'(\d{3})\s*(error|status)', error_message, re.IGNORECASE)
+        if http_status:
+            return f"HTTP{http_status.group(1)}Error"
+        
+        # Look for system error patterns
+        if re.search(r'permission denied', error_message, re.IGNORECASE):
+            return "PermissionError"
+        
+        if re.search(r'not found', error_message, re.IGNORECASE):
+            return "NotFoundError"
+        
+        if re.search(r'timeout', error_message, re.IGNORECASE):
+            return "TimeoutError"
+        
+        return "UnknownError"
+    
+    def _match_known_patterns(self, error_message: str) -> List[Dict[str, Any]]:
+        """Match error against known patterns."""
+        matches = []
+        
+        for pattern_name, pattern_info in self.compiled_patterns.items():
+            for regex in pattern_info['regexes']:
+                match = regex.search(error_message)
+                if match:
+                    match_info = {
+                        'pattern_name': pattern_name,
+                        'matched_text': match.group(0),
+                        'captured_groups': match.groups(),
+                        'metadata': pattern_info['metadata'].copy(),
+                        'confidence': self._calculate_pattern_confidence(match, error_message)
+                    }
+                    matches.append(match_info)
+        
+        # Sort by confidence
+        matches.sort(key=lambda x: x['confidence'], reverse=True)
+        return matches
+    
+    def _extract_semantic_tokens(self, error_message: str) -> List[str]:
+        """Extract semantically meaningful tokens."""
+        # Technical terms pattern
+        technical_pattern = r'\b(?:error|exception|failed|timeout|connection|permission|syntax|module|import|file|directory|api|http|ssl|certificate|authentication|authorization|validation|assertion|memory|cpu|disk|network|database|sql|json|xml|html|css|javascript|python|java|node|npm|pip|conda|docker|kubernetes|aws|azure|gcp)\b'
+        
+        # Extract technical terms
+        technical_tokens = re.findall(technical_pattern, error_message, re.IGNORECASE)
+        
+        # Extract quoted strings (often contain important identifiers)
+        quoted_strings = re.findall(r"['\"]([^'\"]+)['\"]", error_message)
+        
+        # Extract identifiers (function names, variable names, etc.)
+        identifiers = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', error_message)
+        
+        # Combine and deduplicate
+        all_tokens = technical_tokens + quoted_strings + identifiers
+        semantic_tokens = list(set(token.lower() for token in all_tokens if len(token) > 2))
+        
+        return semantic_tokens
+    
+    def _extract_technical_entities(self, error_message: str) -> Dict[str, List[str]]:
+        """Extract technical entities like modules, files, URLs, etc."""
+        entities = {
+            'modules': [],
+            'files': [],
+            'urls': [],
+            'functions': [],
+            'classes': [],
+            'variables': [],
+            'numbers': [],
+            'paths': []
+        }
+        
+        # Module names (often in quotes after import errors)
+        modules = re.findall(r"module named ['\"]([^'\"]+)['\"]", error_message, re.IGNORECASE)
+        entities['modules'].extend(modules)
+        
+        # File paths
+        file_paths = re.findall(r'[/\\]?(?:[a-zA-Z0-9_\-\.]+[/\\])*[a-zA-Z0-9_\-\.]+\.[a-zA-Z0-9]+', error_message)
+        entities['files'].extend(file_paths)
+        
+        # URLs
+        urls = re.findall(r'https?://[^\s]+', error_message)
+        entities['urls'].extend(urls)
+        
+        # Function calls (something followed by parentheses)
+        functions = re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', error_message)
+        entities['functions'].extend(functions)
+        
+        # Numbers (line numbers, error codes, etc.)
+        numbers = re.findall(r'\b\d+\b', error_message)
+        entities['numbers'].extend(numbers)
+        
+        # Remove duplicates
+        for key in entities:
+            entities[key] = list(set(entities[key]))
+        
+        return entities
+    
+    def _extract_severity_indicators(self, error_message: str) -> Dict[str, Any]:
+        """Extract indicators of error severity."""
+        severity_keywords = {
+            'critical': ['critical', 'fatal', 'abort', 'crash', 'panic', 'emergency'],
+            'high': ['error', 'failed', 'failure', 'exception', 'denied', 'forbidden'],
+            'medium': ['warning', 'warn', 'deprecated', 'invalid', 'unexpected'],
+            'low': ['info', 'notice', 'debug', 'trace']
+        }
+        
+        found_indicators = {}
+        message_lower = error_message.lower()
+        
+        for severity, keywords in severity_keywords.items():
+            found = [kw for kw in keywords if kw in message_lower]
+            if found:
+                found_indicators[severity] = found
+        
+        # Calculate overall severity score
+        severity_score = 0.0
+        if 'critical' in found_indicators:
+            severity_score = 1.0
+        elif 'high' in found_indicators:
+            severity_score = 0.8
+        elif 'medium' in found_indicators:
+            severity_score = 0.5
+        elif 'low' in found_indicators:
+            severity_score = 0.2
+        
+        return {
+            'found_indicators': found_indicators,
+            'severity_score': severity_score,
+            'has_stack_trace': 'traceback' in message_lower,
+            'has_exit_code': bool(re.search(r'exit.*?code.*?\d+', message_lower))
+        }
+    
+    def _extract_context_clues(self, error_message: str, context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Extract context clues from error and surrounding information."""
+        clues = {
+            'stage_hints': [],
+            'domain_hints': [],
+            'tool_hints': [],
+            'environment_hints': []
+        }
+        
+        message_lower = error_message.lower()
+        
+        # Stage hints
+        stage_indicators = {
+            'think': ['analyze', 'understand', 'planning'],
+            'research': ['documentation', 'search', 'lookup'],
+            'reflect': ['consider', 'review', 'evaluate'],
+            'decide': ['choose', 'select', 'determine'],
+            'execute': ['run', 'execute', 'implement', 'install'],
+            'validate': ['test', 'verify', 'check', 'assert'],
+            'solidify': ['document', 'finalize', 'complete']
+        }
+        
+        for stage, indicators in stage_indicators.items():
+            if any(indicator in message_lower for indicator in indicators):
+                clues['stage_hints'].append(stage)
+        
+        # Tool hints from error message
+        tool_indicators = ['pip', 'npm', 'conda', 'docker', 'git', 'pytest', 'jest', 'webpack']
+        clues['tool_hints'] = [tool for tool in tool_indicators if tool in message_lower]
+        
+        # Environment hints
+        env_indicators = {
+            'windows': ['windows', 'win32', 'cmd.exe'],
+            'linux': ['linux', 'ubuntu', 'debian'],
+            'macos': ['darwin', 'macos'],
+            'docker': ['container', 'docker'],
+            'virtual_env': ['venv', 'virtualenv', 'conda']
+        }
+        
+        for env, indicators in env_indicators.items():
+            if any(indicator in message_lower for indicator in indicators):
+                clues['environment_hints'].append(env)
+        
+        # Add context information if provided
+        if context:
+            clues['provided_context'] = {
+                'stage': context.get('stage'),
+                'domain': context.get('domain'),
+                'tools_available': context.get('tools_available', [])
+            }
+        
+        return clues
+    
+    def _extract_actionable_elements(self, error_message: str) -> List[Dict[str, Any]]:
+        """Extract elements that suggest specific actions."""
+        actionable_elements = []
+        
+        # Installation suggestions
+        install_matches = re.findall(r"install\s+([a-zA-Z0-9_\-\.]+)", error_message, re.IGNORECASE)
+        for package in install_matches:
+            actionable_elements.append({
+                'action_type': 'install_package',
+                'target': package,
+                'confidence': 0.9,
+                'suggested_command': f"pip install {package}"
+            })
+        
+        # File creation suggestions
+        file_matches = re.findall(r"create.*?file.*?['\"]([^'\"]+)['\"]", error_message, re.IGNORECASE)
+        for file_path in file_matches:
+            actionable_elements.append({
+                'action_type': 'create_file',
+                'target': file_path,
+                'confidence': 0.7,
+                'suggested_command': f"touch {file_path}"
+            })
+        
+        # Permission fixes
+        if re.search(r'permission denied', error_message, re.IGNORECASE):
+            file_matches = re.findall(r"['\"]([^'\"]*\.[a-zA-Z0-9]+)['\"]", error_message)
+            for file_path in file_matches:
+                actionable_elements.append({
+                    'action_type': 'fix_permissions',
+                    'target': file_path,
+                    'confidence': 0.8,
+                    'suggested_command': f"chmod +x {file_path}"
+                })
+        
+        # Configuration fixes
+        if re.search(r'config.*?not found', error_message, re.IGNORECASE):
+            actionable_elements.append({
+                'action_type': 'check_configuration',
+                'target': 'configuration_file',
+                'confidence': 0.7,
+                'suggested_command': "Check configuration file exists and is valid"
+            })
+        
+        return actionable_elements
+    
+    def _build_error_hierarchy(self, error_message: str) -> Dict[str, Any]:
+        """Build hierarchical representation of error."""
+        hierarchy = {
+            'root_cause': None,
+            'immediate_cause': None,
+            'symptoms': [],
+            'cascade_effects': []
+        }
+        
+        # Simple heuristic-based hierarchy building
+        lines = error_message.split('\n')
+        
+        # Root cause often at the end of stack traces
+        if len(lines) > 1 and 'traceback' in error_message.lower():
+            hierarchy['root_cause'] = lines[-1].strip()
+            hierarchy['immediate_cause'] = lines[-2].strip() if len(lines) > 2 else None
+        else:
+            # For simple errors, the whole message is the immediate cause
+            hierarchy['immediate_cause'] = error_message.strip()
+        
+        # Extract symptoms (often early lines in stack trace)
+        if len(lines) > 3:
+            hierarchy['symptoms'] = [line.strip() for line in lines[1:3] if line.strip()]
+        
+        return hierarchy
+    
+    def _calculate_pattern_confidence(self, match: re.Match, full_message: str) -> float:
+        """Calculate confidence in pattern match."""
+        base_confidence = 0.7
+        
+        # Bonus for capturing groups (more specific matches)
+        if match.groups():
+            base_confidence += 0.1 * len(match.groups())
+        
+        # Bonus for match length relative to message
+        match_length = len(match.group(0))
+        message_length = len(full_message)
+        length_ratio = match_length / message_length
+        base_confidence += length_ratio * 0.2
+        
+        # Bonus for exact error type matches
+        if any(exc in match.group(0) for exc in ['Error', 'Exception']):
+            base_confidence += 0.1
+        
+        return min(1.0, base_confidence)
+    
+    def fit_semantic_models(self, error_messages: List[str]):
+        """Fit semantic models on error message corpus."""
+        if not error_messages:
+            logger.warning("No error messages provided for fitting semantic models")
+            return
+        
+        logger.info(f"Fitting semantic models on {len(error_messages)} error messages")
+        
+        # Normalize messages for training
+        normalized_messages = [self._normalize_error_message(msg) for msg in error_messages]
+        
+        # Fit TF-IDF vectorizer
+        try:
+            self.tfidf_vectorizer.fit(normalized_messages)
+            
+            # Fit semantic vectorizer
+            self.semantic_vectorizer.fit(normalized_messages)
+            
+            # Fit clustering model
+            tfidf_features = self.tfidf_vectorizer.transform(normalized_messages)
+            if tfidf_features.shape[0] >= 20:  # Need enough samples for clustering
+                self.error_clusterer.fit(tfidf_features)
+            
+            # Fit topic model
+            count_features = self.semantic_vectorizer.transform(normalized_messages)
+            if count_features.shape[0] >= 15:  # Need enough samples for LDA
+                self.topic_model.fit(count_features)
+            
+            self.is_fitted = True
+            logger.info("Semantic models fitted successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to fit semantic models: {e}")
+    
+    def get_semantic_similarity(self, error1: str, error2: str) -> float:
+        """Calculate semantic similarity between two errors."""
+        if not self.is_fitted:
+            logger.warning("Semantic models not fitted, using basic similarity")
+            return self._basic_similarity(error1, error2)
+        
+        try:
+            # Normalize messages
+            norm1 = self._normalize_error_message(error1)
+            norm2 = self._normalize_error_message(error2)
+            
+            # Transform to TF-IDF vectors
+            vectors = self.tfidf_vectorizer.transform([norm1, norm2])
+            
+            # Calculate cosine similarity
+            similarity = cosine_similarity(vectors[0:1], vectors[1:2])[0][0]
+            
+            return float(similarity)
+            
+        except Exception as e:
+            logger.error(f"Error calculating semantic similarity: {e}")
+            return self._basic_similarity(error1, error2)
+    
+    def _basic_similarity(self, error1: str, error2: str) -> float:
+        """Basic similarity calculation when semantic models unavailable."""
+        # Simple token overlap
+        tokens1 = set(self._extract_semantic_tokens(error1))
+        tokens2 = set(self._extract_semantic_tokens(error2))
+        
+        if not tokens1 and not tokens2:
+            return 1.0
+        
+        if not tokens1 or not tokens2:
+            return 0.0
+        
+        intersection = len(tokens1 & tokens2)
+        union = len(tokens1 | tokens2)
+        
+        return intersection / union if union > 0 else 0.0
+
+
+class ErrorSignatureDatabase:
+    """
+    Database for storing and retrieving error signatures.
+    """
+    
+    def __init__(self, persistence_path: Path):
+        """Initialize signature database."""
+        self.persistence_path = persistence_path
+        self.persistence_path.mkdir(parents=True, exist_ok=True)
+        
+        self.signatures: Dict[str, ErrorSignature] = {}
+        self.signature_index = {}  # For fast lookups
+        self.load_signatures()
+        
+    def create_signature(self, 
+                        error_message: str,
+                        features: Dict[str, Any],
+                        category: ErrorCategory,
+                        severity: ErrorSeverity) -> ErrorSignature:
+        """Create new error signature from features."""
+        
+        # Generate signature ID
+        signature_content = f"{features['error_type']}_{category.name}_{features['normalized_message'][:100]}"
+        signature_id = hashlib.md5(signature_content.encode()).hexdigest()[:16]
+        
+        # Extract semantic tags
+        semantic_tags = set(features['semantic_tokens'][:10])  # Top 10 tokens
+        
+        # Build context patterns
+        context_patterns = []
+        if features['matched_patterns']:
+            context_patterns = [p['pattern_name'] for p in features['matched_patterns'][:3]]
+        
+        # Generate solution hints
+        solution_hints = []
+        for actionable in features['actionable_elements']:
+            solution_hints.append(actionable['action_type'])
+        
+        # Add pattern-based hints
+        if features['matched_patterns']:
+            for pattern in features['matched_patterns']:
+                solution_hints.extend(pattern['metadata'].get('solution_hints', []))
+        
+        signature = ErrorSignature(
+            signature_id=signature_id,
+            error_type=features['error_type'],
+            category=category,
+            severity=severity,
+            semantic_tags=semantic_tags,
+            context_patterns=context_patterns,
+            solution_hints=list(set(solution_hints)),  # Remove duplicates
+            confidence=0.8,  # Initial confidence
+            example_messages=[error_message],
+            metadata={
+                'creation_features': features,
+                'technical_entities': features['technical_entities'],
+                'severity_indicators': features['severity_indicators']
+            }
+        )
+        
+        return signature
+    
+    def store_signature(self, signature: ErrorSignature):
+        """Store signature in database."""
+        if signature.signature_id in self.signatures:
+            # Update existing signature
+            existing = self.signatures[signature.signature_id]
+            existing.occurrence_count += 1
+            existing.last_seen = datetime.now()
+            existing.example_messages.append(signature.example_messages[0])
+            
+            # Keep only recent examples
+            if len(existing.example_messages) > 10:
+                existing.example_messages = existing.example_messages[-10:]
+            
+            # Update semantic tags (merge)
+            existing.semantic_tags.update(signature.semantic_tags)
+            
+        else:
+            # Store new signature
+            self.signatures[signature.signature_id] = signature
+            self._update_index(signature)
+        
+        # Periodically save to disk
+        if len(self.signatures) % 10 == 0:
+            self.save_signatures()
+    
+    def find_matching_signatures(self, 
+                                features: Dict[str, Any],
+                                max_results: int = 5) -> List[Tuple[ErrorSignature, float]]:
+        """Find signatures matching the given features."""
+        candidates = []
+        
+        # First, try exact error type match
+        error_type = features['error_type']
+        type_matches = [sig for sig in self.signatures.values() if sig.error_type == error_type]
+        
+        if not type_matches:
+            # Fallback to all signatures
+            type_matches = list(self.signatures.values())
+        
+        # Calculate similarity scores
+        for signature in type_matches:
+            similarity = self._calculate_signature_similarity(features, signature)
+            if similarity > 0.3:  # Minimum threshold
+                candidates.append((signature, similarity))
+        
+        # Sort by similarity and return top results
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        return candidates[:max_results]
+    
+    def _calculate_signature_similarity(self, 
+                                      features: Dict[str, Any], 
+                                      signature: ErrorSignature) -> float:
+        """Calculate similarity between features and signature."""
+        similarity = 0.0
+        
+        # Error type match (40% weight)
+        if features['error_type'] == signature.error_type:
+            similarity += 0.4
+        
+        # Semantic tags overlap (30% weight)
+        feature_tags = set(features['semantic_tokens'])
+        tag_overlap = len(feature_tags & signature.semantic_tags) / max(len(signature.semantic_tags), 1)
+        similarity += tag_overlap * 0.3
+        
+        # Pattern match (20% weight)
+        feature_patterns = set(p['pattern_name'] for p in features['matched_patterns'])
+        pattern_overlap = len(feature_patterns & set(signature.context_patterns)) / max(len(signature.context_patterns), 1)
+        similarity += pattern_overlap * 0.2
+        
+        # Category match (10% weight)
+        # This would need to be inferred from features or provided
+        # For now, skip this component
+        
+        return similarity
+    
+    def _update_index(self, signature: ErrorSignature):
+        """Update search index for signature."""
+        # Index by error type
+        if signature.error_type not in self.signature_index:
+            self.signature_index[signature.error_type] = []
+        self.signature_index[signature.error_type].append(signature.signature_id)
+        
+        # Index by semantic tags
+        for tag in signature.semantic_tags:
+            index_key = f"tag_{tag}"
+            if index_key not in self.signature_index:
+                self.signature_index[index_key] = []
+            self.signature_index[index_key].append(signature.signature_id)
+    
+    def save_signatures(self):
+        """Save signatures to disk."""
+        signatures_file = self.persistence_path / "error_signatures.pkl"
+        index_file = self.persistence_path / "signature_index.pkl"
+        
+        try:
+            with open(signatures_file, 'wb') as f:
+                pickle.dump(self.signatures, f)
+            
+            with open(index_file, 'wb') as f:
+                pickle.dump(self.signature_index, f)
+                
+            logger.info(f"Saved {len(self.signatures)} error signatures")
+            
+        except Exception as e:
+            logger.error(f"Failed to save signatures: {e}")
+    
+    def load_signatures(self):
+        """Load signatures from disk."""
+        signatures_file = self.persistence_path / "error_signatures.pkl"
+        index_file = self.persistence_path / "signature_index.pkl"
+        
+        try:
+            if signatures_file.exists():
+                with open(signatures_file, 'rb') as f:
+                    self.signatures = pickle.load(f)
+                
+                with open(index_file, 'rb') as f:
+                    self.signature_index = pickle.load(f)
+                
+                logger.info(f"Loaded {len(self.signatures)} error signatures")
+                
+        except Exception as e:
+            logger.warning(f"Failed to load signatures: {e}")
+            self.signatures = {}
+            self.signature_index = {}
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get database statistics."""
+        if not self.signatures:
+            return {'total_signatures': 0}
+        
+        # Count by category
+        category_counts = defaultdict(int)
+        severity_counts = defaultdict(int)
+        
+        for sig in self.signatures.values():
+            category_counts[sig.category.name] += 1
+            severity_counts[sig.severity.name] += 1
+        
+        # Most common error types
+        error_type_counts = Counter(sig.error_type for sig in self.signatures.values())
+        
+        return {
+            'total_signatures': len(self.signatures),
+            'categories': dict(category_counts),
+            'severities': dict(severity_counts),
+            'most_common_types': error_type_counts.most_common(5),
+            'average_confidence': statistics.mean(sig.confidence for sig in self.signatures.values()),
+            'total_occurrences': sum(sig.occurrence_count for sig in self.signatures.values())
+        }
+
+
+class SemanticErrorClassifier:
+    """
+    Main classifier that orchestrates error understanding and classification.
+    """
+    
+    def __init__(self, persistence_path: Path):
+        """
+        Initialize semantic error classifier.
+        
+        Args:
+            persistence_path: Path for storing learned patterns and signatures
+        """
+        self.persistence_path = persistence_path
+        self.persistence_path.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize components
+        self.extractor = ErrorPatternExtractor()
+        self.signature_db = ErrorSignatureDatabase(persistence_path)
+        
+        # Classification cache
+        self.classification_cache = {}
+        
+        # Initialize with existing error messages if available
+        self._initialize_semantic_models()
+        
+        logger.info(f"SemanticErrorClassifier initialized with {len(self.signature_db.signatures)} signatures")
+    
+    def classify_error(self, 
+                      error_message: str,
+                      context: Optional[Dict[str, Any]] = None) -> ErrorClassification:
+        """
+        Classify an error message semantically.
+        
+        Args:
+            error_message: The error message to classify
+            context: Additional context (stage, domain, etc.)
+            
+        Returns:
+            ErrorClassification with semantic analysis and suggestions
+        """
+        # Check cache first
+        cache_key = hashlib.md5(f"{error_message}_{str(context)}".encode()).hexdigest()
+        if cache_key in self.classification_cache:
+            logger.debug("Returning cached classification")
+            return self.classification_cache[cache_key]
+        
+        # Extract features
+        features = self.extractor.extract_error_features(error_message, context)
+        
+        # Find matching signatures
+        matching_signatures = self.signature_db.find_matching_signatures(features)
+        
+        # Determine best match
+        best_signature = None
+        confidence = 0.0
+        
+        if matching_signatures:
+            best_signature, confidence = matching_signatures[0]
+        
+        # If no good match, create new signature
+        if confidence < 0.6:
+            category, severity = self._infer_category_and_severity(features)
+            new_signature = self.signature_db.create_signature(
+                error_message, features, category, severity
+            )
+            self.signature_db.store_signature(new_signature)
+            best_signature = new_signature
+            confidence = new_signature.confidence
+        
+        # Generate semantic analysis
+        semantic_analysis = self._generate_semantic_analysis(features, best_signature)
+        
+        # Generate suggested actions
+        suggested_actions = self._generate_action_suggestions(features, best_signature)
+        
+        # Extract context insights
+        context_insights = self._generate_context_insights(features, context)
+        
+        # Find related errors
+        related_errors = self._find_related_errors(features, best_signature)
+        
+        # Calculate urgency score
+        urgency_score = self._calculate_urgency_score(features, best_signature)
+        
+        # Create classification result
+        classification = ErrorClassification(
+            original_error=error_message,
+            matched_signature=best_signature,
+            confidence=confidence,
+            semantic_analysis=semantic_analysis,
+            suggested_actions=suggested_actions,
+            context_insights=context_insights,
+            related_errors=related_errors,
+            urgency_score=urgency_score,
+            classification_metadata={
+                'features_extracted': len(features),
+                'patterns_matched': len(features['matched_patterns']),
+                'semantic_tokens': len(features['semantic_tokens']),
+                'actionable_elements': len(features['actionable_elements'])
+            }
+        )
+        
+        # Cache result
+        self.classification_cache[cache_key] = classification
+        
+        # Limit cache size
+        if len(self.classification_cache) > 1000:
+            # Remove oldest entries
+            oldest_keys = list(self.classification_cache.keys())[:100]
+            for key in oldest_keys:
+                del self.classification_cache[key]
+        
+        logger.info(f"Classified error as {best_signature.error_type} with {confidence:.2f} confidence")
+        
+        return classification
+    
+    def _initialize_semantic_models(self):
+        """Initialize semantic models with existing error messages."""
+        if self.signature_db.signatures:
+            # Collect all example messages
+            all_messages = []
+            for signature in self.signature_db.signatures.values():
+                all_messages.extend(signature.example_messages)
+            
+            if all_messages:
+                self.extractor.fit_semantic_models(all_messages)
+    
+    def _infer_category_and_severity(self, features: Dict[str, Any]) -> Tuple[ErrorCategory, ErrorSeverity]:
+        """Infer category and severity from features."""
+        
+        # Check matched patterns first
+        for pattern in features['matched_patterns']:
+            if 'category' in pattern['metadata']:
+                category = pattern['metadata']['category']
+                severity = pattern['metadata']['severity']
+                return category, severity
+        
+        # Fallback inference based on error type and keywords
+        error_type = features['error_type'].lower()
+        
+        # Category inference
+        if 'module' in error_type or 'import' in error_type:
+            category = ErrorCategory.DEPENDENCY
+        elif 'permission' in error_type or 'access' in error_type:
+            category = ErrorCategory.PERMISSION
+        elif 'syntax' in error_type:
+            category = ErrorCategory.SYNTAX
+        elif 'connection' in error_type or 'timeout' in error_type:
+            category = ErrorCategory.NETWORK
+        elif 'assertion' in error_type or 'test' in error_type:
+            category = ErrorCategory.VALIDATION
+        elif 'memory' in error_type or 'resource' in error_type:
+            category = ErrorCategory.RESOURCE
+        elif 'config' in error_type:
+            category = ErrorCategory.CONFIGURATION
+        elif any(t in error_type for t in ['type', 'value', 'runtime']):
+            category = ErrorCategory.LOGIC
+        elif 'api' in error_type or 'http' in error_type:
+            category = ErrorCategory.INTEGRATION
+        else:
+            category = ErrorCategory.RUNTIME
+        
+        # Severity inference
+        severity_score = features['severity_indicators']['severity_score']
+        if severity_score >= 0.8:
+            severity = ErrorSeverity.HIGH
+        elif severity_score >= 0.5:
+            severity = ErrorSeverity.MEDIUM
+        elif severity_score >= 0.2:
+            severity = ErrorSeverity.LOW
+        else:
+            severity = ErrorSeverity.MEDIUM  # Default
+        
+        return category, severity
+    
+    def _generate_semantic_analysis(self, 
+                                   features: Dict[str, Any], 
+                                   signature: ErrorSignature) -> Dict[str, Any]:
+        """Generate comprehensive semantic analysis."""
+        return {
+            'error_type': features['error_type'],
+            'category': signature.category.name,
+            'severity': signature.severity.name,
+            'semantic_summary': self._generate_semantic_summary(features, signature),
+            'key_entities': features['technical_entities'],
+            'context_clues': features['context_clues'],
+            'error_hierarchy': features['error_hierarchy'],
+            'similar_patterns': [p['pattern_name'] for p in features['matched_patterns']],
+            'confidence_factors': self._analyze_confidence_factors(features, signature),
+            'complexity_score': self._calculate_complexity_score(features)
+        }
+    
+    def _generate_semantic_summary(self, 
+                                  features: Dict[str, Any], 
+                                  signature: ErrorSignature) -> str:
+        """Generate human-readable semantic summary."""
+        error_type = features['error_type']
+        category = signature.category.name.lower().replace('_', ' ')
+        
+        # Extract key entities
+        entities = features['technical_entities']
+        key_module = entities.get('modules', [None])[0]
+        key_file = entities.get('files', [None])[0]
+        
+        # Build summary
+        summary_parts = [f"This is a {error_type} in the {category} category."]
+        
+        if key_module:
+            summary_parts.append(f"It involves the '{key_module}' module.")
+        
+        if key_file:
+            summary_parts.append(f"The error occurred in file '{key_file}'.")
+        
+        if signature.solution_hints:
+            primary_hint = signature.solution_hints[0].replace('_', ' ')
+            summary_parts.append(f"The primary solution approach is: {primary_hint}.")
+        
+        return " ".join(summary_parts)
+    
+    def _generate_action_suggestions(self, 
+                                    features: Dict[str, Any], 
+                                    signature: ErrorSignature) -> List[Dict[str, Any]]:
+        """Generate specific action suggestions."""
+        suggestions = []
+        
+        # Add suggestions from actionable elements
+        for element in features['actionable_elements']:
+            suggestions.append({
+                'action': element['action_type'],
+                'description': element.get('suggested_command', 'No specific command'),
+                'confidence': element['confidence'],
+                'priority': 'high' if element['confidence'] > 0.8 else 'medium',
+                'source': 'pattern_extraction'
+            })
+        
+        # Add suggestions from signature solution hints
+        for hint in signature.solution_hints:
+            hint_description = self._expand_solution_hint(hint, features)
+            suggestions.append({
+                'action': hint,
+                'description': hint_description,
+                'confidence': signature.confidence,
+                'priority': 'high' if signature.confidence > 0.8 else 'medium',
+                'source': 'signature_match'
+            })
+        
+        # Add context-specific suggestions
+        context_suggestions = self._generate_context_specific_suggestions(features)
+        suggestions.extend(context_suggestions)
+        
+        # Remove duplicates and sort by priority/confidence
+        unique_suggestions = {}
+        for suggestion in suggestions:
+            key = suggestion['action']
+            if key not in unique_suggestions or suggestion['confidence'] > unique_suggestions[key]['confidence']:
+                unique_suggestions[key] = suggestion
+        
+        # Sort by priority and confidence
+        sorted_suggestions = sorted(
+            unique_suggestions.values(),
+            key=lambda x: (x['priority'] == 'high', x['confidence']),
+            reverse=True
+        )
+        
+        return sorted_suggestions[:5]  # Top 5 suggestions
+    
+    def _expand_solution_hint(self, hint: str, features: Dict[str, Any]) -> str:
+        """Expand solution hint into actionable description."""
+        hint_expansions = {
+            'install_package': 'Install the missing package using pip or conda',
+            'check_requirements': 'Verify that all required dependencies are listed and installed',
+            'virtual_environment': 'Ensure you are working in the correct virtual environment',
+            'change_permissions': 'Modify file permissions to allow access',
+            'check_ownership': 'Verify file ownership and user permissions',
+            'run_as_admin': 'Run the command with administrator/sudo privileges',
+            'check_path': 'Verify the file path exists and is accessible',
+            'create_file': 'Create the missing file or directory',
+            'verify_working_directory': 'Check that you are in the correct working directory',
+            'check_syntax': 'Review code syntax for errors',
+            'review_indentation': 'Check Python indentation and formatting',
+            'validate_brackets': 'Ensure all brackets, parentheses, and quotes are balanced',
+            'check_network': 'Verify network connectivity and firewall settings',
+            'verify_endpoint': 'Confirm the API endpoint URL is correct and accessible',
+            'retry_with_backoff': 'Implement retry logic with exponential backoff',
+            'review_test_logic': 'Examine test assertions and expected values',
+            'check_expected_values': 'Verify that test expectations match actual behavior',
+            'validate_data': 'Check input data format and values',
+            'check_types': 'Verify data types match expectations',
+            'add_type_conversion': 'Add explicit type conversion where needed',
+            'validate_input': 'Add input validation and sanitization',
+            'optimize_memory_usage': 'Reduce memory consumption or process data in chunks',
+            'process_in_chunks': 'Break large datasets into smaller, manageable pieces',
+            'increase_resources': 'Allocate more memory or computational resources',
+            'check_api_credentials': 'Verify API keys and authentication credentials',
+            'handle_rate_limits': 'Implement rate limiting and respect API quotas',
+            'check_config_file': 'Verify configuration file exists and is properly formatted',
+            'verify_environment_variables': 'Check that required environment variables are set',
+            'validate_settings': 'Ensure all configuration settings are correct'
+        }
+        
+        expanded = hint_expansions.get(hint, hint.replace('_', ' ').title())
+        
+        # Add specific details from features if available
+        entities = features['technical_entities']
+        if hint == 'install_package' and entities.get('modules'):
+            module = entities['modules'][0]
+            expanded = f"Install the missing package: pip install {module}"
+        elif hint == 'check_path' and entities.get('files'):
+            file_path = entities['files'][0]
+            expanded = f"Verify the file path exists: {file_path}"
+        
+        return expanded
+    
+    def _generate_context_specific_suggestions(self, features: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate suggestions based on context clues."""
+        suggestions = []
+        
+        context_clues = features['context_clues']
+        
+        # Stage-specific suggestions
+        if 'execute' in context_clues.get('stage_hints', []):
+            suggestions.append({
+                'action': 'check_implementation',
+                'description': 'Review the implementation for logical errors or missing steps',
+                'confidence': 0.7,
+                'priority': 'medium',
+                'source': 'context_analysis'
+            })
+        
+        if 'validate' in context_clues.get('stage_hints', []):
+            suggestions.append({
+                'action': 'review_tests',
+                'description': 'Check test cases and validation logic',
+                'confidence': 0.8,
+                'priority': 'high',
+                'source': 'context_analysis'
+            })
+        
+        # Tool-specific suggestions
+        if 'pip' in context_clues.get('tool_hints', []):
+            suggestions.append({
+                'action': 'update_pip',
+                'description': 'Update pip to the latest version: pip install --upgrade pip',
+                'confidence': 0.6,
+                'priority': 'low',
+                'source': 'context_analysis'
+            })
+        
+        return suggestions
+    
+    def _generate_context_insights(self, 
+                                  features: Dict[str, Any], 
+                                  context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate insights about the error context."""
+        insights = {
+            'stage_relevance': {},
+            'domain_patterns': {},
+            'environment_factors': {},
+            'timing_factors': {}
+        }
+        
+        # Stage relevance
+        context_clues = features['context_clues']
+        for stage in context_clues.get('stage_hints', []):
+            insights['stage_relevance'][stage] = f"Error patterns suggest this occurred during {stage} stage"
+        
+        # Domain patterns
+        if context and 'domain' in context:
+            domain = context['domain']
+            insights['domain_patterns'][domain] = f"This error type is common in {domain} projects"
+        
+        # Environment factors
+        for env in context_clues.get('environment_hints', []):
+            insights['environment_factors'][env] = f"Environment-specific issue detected for {env}"
+        
+        # Timing factors (time of day, etc.)
+        current_hour = datetime.now().hour
+        if 0 <= current_hour <= 6:
+            insights['timing_factors']['late_night'] = "Late night coding - check for fatigue-related errors"
+        elif 17 <= current_hour <= 23:
+            insights['timing_factors']['evening'] = "Evening work session - consider environment setup issues"
+        
+        return insights
+    
+    def _find_related_errors(self, 
+                           features: Dict[str, Any], 
+                           signature: ErrorSignature) -> List[str]:
+        """Find related errors based on semantic similarity."""
+        related = []
+        
+        # Find errors with similar semantic tags
+        current_tags = set(features['semantic_tokens'])
+        
+        for other_signature in self.signature_db.signatures.values():
+            if other_signature.signature_id != signature.signature_id:
+                # Calculate tag overlap
+                tag_overlap = len(current_tags & other_signature.semantic_tags)
+                if tag_overlap >= 2:  # At least 2 common tags
+                    related.append(f"{other_signature.error_type}: {other_signature.semantic_tags}")
+        
+        return related[:3]  # Top 3 related errors
+    
+    def _calculate_urgency_score(self, 
+                               features: Dict[str, Any], 
+                               signature: ErrorSignature) -> float:
+        """Calculate how urgently this error needs attention."""
+        urgency = 0.0
+        
+        # Base urgency from severity
+        severity_scores = {
+            ErrorSeverity.CRITICAL: 1.0,
+            ErrorSeverity.HIGH: 0.8,
+            ErrorSeverity.MEDIUM: 0.5,
+            ErrorSeverity.LOW: 0.2,
+            ErrorSeverity.INFO: 0.1
+        }
+        urgency += severity_scores.get(signature.severity, 0.5)
+        
+        # Increase urgency for certain categories
+        if signature.category in [ErrorCategory.DEPENDENCY, ErrorCategory.SYNTAX]:
+            urgency += 0.2  # These block progress
+        
+        # Increase urgency if error blocks execution
+        if any(hint in ['install_package', 'fix_permissions'] for hint in signature.solution_hints):
+            urgency += 0.1
+        
+        # Decrease urgency for warnings
+        if features['severity_indicators']['severity_score'] < 0.3:
+            urgency *= 0.5
+        
+        return min(1.0, urgency)
+    
+    def _analyze_confidence_factors(self, 
+                                  features: Dict[str, Any], 
+                                  signature: ErrorSignature) -> Dict[str, str]:
+        """Analyze factors affecting classification confidence."""
+        factors = {}
+        
+        # Pattern matching quality
+        if features['matched_patterns']:
+            best_pattern = features['matched_patterns'][0]
+            factors['pattern_match'] = f"Strong pattern match: {best_pattern['pattern_name']}"
+        else:
+            factors['pattern_match'] = "No known patterns matched"
+        
+        # Semantic richness
+        token_count = len(features['semantic_tokens'])
+        if token_count > 10:
+            factors['semantic_richness'] = "Rich semantic content available"
+        elif token_count > 5:
+            factors['semantic_richness'] = "Moderate semantic content"
+        else:
+            factors['semantic_richness'] = "Limited semantic content"
+        
+        # Error specificity
+        if signature.occurrence_count > 10:
+            factors['experience'] = f"Well-known error (seen {signature.occurrence_count} times)"
+        elif signature.occurrence_count > 1:
+            factors['experience'] = "Previously encountered error"
+        else:
+            factors['experience'] = "New or rare error"
+        
+        return factors
+    
+    def _calculate_complexity_score(self, features: Dict[str, Any]) -> float:
+        """Calculate complexity score of the error."""
+        complexity = 0.0
+        
+        # Length factor
+        message_length = features['metadata']['message_length']
+        complexity += min(message_length / 1000, 0.3)  # Max 0.3 for length
+        
+        # Technical entities factor
+        entity_count = sum(len(entities) for entities in features['technical_entities'].values())
+        complexity += min(entity_count / 20, 0.3)  # Max 0.3 for entities
+        
+        # Stack trace factor
+        if features['metadata']['has_stack_trace']:
+            complexity += 0.2
+        
+        # Pattern complexity
+        if len(features['matched_patterns']) > 2:
+            complexity += 0.2
+        
+        return min(1.0, complexity)
+    
+    def learn_from_resolution(self, 
+                            error_message: str,
+                            resolution_success: bool,
+                            resolution_method: str,
+                            outcome_metrics: Dict[str, float]):
+        """Learn from error resolution outcomes."""
+        # Classify the error to get signature
+        classification = self.classify_error(error_message)
+        
+        if classification.matched_signature:
+            signature = classification.matched_signature
+            
+            # Update signature based on resolution outcome
+            if resolution_success:
+                # Increase confidence
+                signature.confidence = min(0.95, signature.confidence + 0.05)
+                
+                # Add successful resolution method to hints
+                if resolution_method not in signature.solution_hints:
+                    signature.solution_hints.append(resolution_method)
+                
+                # Update last success time
+                signature.last_seen = datetime.now()
+            else:
+                # Decrease confidence slightly
+                signature.confidence = max(0.3, signature.confidence - 0.02)
+            
+            # Store updated signature
+            self.signature_db.store_signature(signature)
+        
+        logger.info(f"Learned from resolution: {resolution_method} -> {'success' if resolution_success else 'failure'}")
+    
+    def get_classification_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive classification statistics."""
+        stats = {
+            'signature_database': self.signature_db.get_statistics(),
+            'semantic_models': {
+                'is_fitted': self.extractor.is_fitted,
+                'patterns_defined': len(self.extractor.ERROR_PATTERNS)
+            },
+            'classification_cache': {
+                'cached_classifications': len(self.classification_cache),
+                'cache_hit_rate': 'Not tracked'  # Could add tracking
+            },
+            'error_distribution': self._get_error_distribution(),
+            'resolution_effectiveness': self._get_resolution_effectiveness()
+        }
+        
+        return stats
+    
+    def _get_error_distribution(self) -> Dict[str, Any]:
+        """Get distribution of errors by various dimensions."""
+        if not self.signature_db.signatures:
+            return {}
+        
+        signatures = list(self.signature_db.signatures.values())
+        
+        # By category
+        category_dist = Counter(sig.category.name for sig in signatures)
+        
+        # By severity
+        severity_dist = Counter(sig.severity.name for sig in signatures)
+        
+        # By error type
+        type_dist = Counter(sig.error_type for sig in signatures)
+        
+        return {
+            'by_category': dict(category_dist),
+            'by_severity': dict(severity_dist),
+            'by_error_type': dict(type_dist.most_common(10))
+        }
+    
+    def _get_resolution_effectiveness(self) -> Dict[str, Any]:
+        """Get effectiveness metrics for different resolution approaches."""
+        # This would require tracking resolution outcomes
+        # For now, return placeholder data
+        return {
+            'most_effective_hints': [
+                'install_package',
+                'check_permissions',
+                'verify_environment'
+            ],
+            'average_resolution_time': 'Not tracked',
+            'success_rate_by_category': 'Not tracked'
+        }
+    
+    def export_knowledge(self, export_path: Path):
+        """Export learned knowledge for sharing or backup."""
+        export_data = {
+            'signatures': [sig.to_dict() for sig in self.signature_db.signatures.values()],
+            'patterns': self.extractor.ERROR_PATTERNS,
+            'statistics': self.get_classification_statistics(),
+            'export_timestamp': datetime.now().isoformat(),
+            'version': '1.0'
+        }
+        
+        with open(export_path, 'w') as f:
+            json.dump(export_data, f, indent=2)
+        
+        logger.info(f"Exported knowledge to {export_path}")
+
+
+# Example usage and testing
+if __name__ == "__main__":
+    import tempfile
+    
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
+    
+    # Create temporary directory for testing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        classifier = SemanticErrorClassifier(Path(temp_dir))
+        
+        # Test error messages
+        test_errors = [
+            "ModuleNotFoundError: No module named 'requests'",
+            "PermissionError: [Errno 13] Permission denied: '/usr/local/bin/script.py'",
+            "SyntaxError: invalid syntax (script.py, line 42)",
+            "ConnectionError: Failed to establish a new connection: [Errno 111] Connection refused",
+            "AssertionError: Expected 200, got 404",
+            "TypeError: unsupported operand type(s) for +: 'int' and 'str'",
+            "ValueError: invalid literal for int() with base 10: 'abc'",
+            "FileNotFoundError: [Errno 2] No such file or directory: 'config.json'",
+            "MemoryError: Unable to allocate memory",
+            "HTTP 429 Error: Too Many Requests"
+        ]
+        
+        print("=== SEMANTIC ERROR CLASSIFICATION TESTING ===\n")
+        
+        # Classify each error
+        for i, error in enumerate(test_errors, 1):
+            print(f"Error {i}: {error[:60]}...")
+            
+            # Add some context
+            context = {
+                'stage': ['execute', 'validate', 'research'][i % 3],
+                'domain': ['software_development', 'data_science'][i % 2],
+                'tools_available': ['pip', 'pytest', 'git']
+            }
+            
+            # Classify
+            classification = classifier.classify_error(error, context)
+            
+            print(f"  Type: {classification.matched_signature.error_type}")
+            print(f"  Category: {classification.matched_signature.category.name}")
+            print(f"  Severity: {classification.matched_signature.severity.name}")
+            print(f"  Confidence: {classification.confidence:.2f}")
+            print(f"  Urgency: {classification.urgency_score:.2f}")
+            
+            # Show top suggestions
+            if classification.suggested_actions:
+                print("  Top Suggestions:")
+                for j, action in enumerate(classification.suggested_actions[:2], 1):
+                    print(f"    {j}. {action['action']}: {action['description']}")
+            
+            print()
+        
+        # Show overall statistics
+        print("=== CLASSIFICATION STATISTICS ===")
+        stats = classifier.get_classification_statistics()
+        
+        print(f"Total Signatures: {stats['signature_database']['total_signatures']}")
+        print(f"Categories: {stats['signature_database']['categories']}")
+        print(f"Severities: {stats['signature_database']['severities']}")
+        print(f"Most Common Types: {stats['signature_database']['most_common_types']}")
+        
+        # Test semantic similarity
+        print("\n=== SEMANTIC SIMILARITY TESTING ===")
+        error1 = "ModuleNotFoundError: No module named 'pandas'"
+        error2 = "ImportError: cannot import name 'DataFrame' from 'pandas'"
+        error3 = "SyntaxError: invalid syntax"
+        
+        similarity_12 = classifier.extractor.get_semantic_similarity(error1, error2)
+        similarity_13 = classifier.extractor.get_semantic_similarity(error1, error3)
+        
+        print(f"Similarity between related import errors: {similarity_12:.3f}")
+        print(f"Similarity between unrelated errors: {similarity_13:.3f}")
+        
+        # Test learning from resolution
+        print("\n=== RESOLUTION LEARNING TEST ===")
+        classifier.learn_from_resolution(
+            error_message="ModuleNotFoundError: No module named 'numpy'",
+            resolution_success=True,
+            resolution_method="pip_install_numpy",
+            outcome_metrics={'success_score': 0.95, 'time_to_resolution': 30}
+        )
+        
+        print("Learned from successful resolution of numpy import error")
+        
+        # Export knowledge
+        export_path = Path(temp_dir) / "knowledge_export.json"
+        classifier.export_knowledge(export_path)
+        print(f"Knowledge exported to {export_path}")
+        
+        print("\n=== SEMANTIC ERROR CLASSIFIER TESTING COMPLETE ===")
