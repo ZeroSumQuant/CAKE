@@ -349,7 +349,12 @@ if [[ "$TARGET_PATH" != *"scripts"* ]]; then
     PRINT_COUNT=0
     while IFS= read -r -d '' file; do
         # Count print statements not in comments
-        count=$(grep "print(" "$file" 2>/dev/null | grep -v "#.*print(" | wc -l | tr -d ' ')
+        # First grep might not find anything, so we handle that case
+        if grep -q "print(" "$file" 2>/dev/null; then
+            count=$(grep "print(" "$file" 2>/dev/null | grep -v "#.*print(" | wc -l | tr -d ' ')
+        else
+            count=0
+        fi
         # Ensure count is a valid number
         if [[ -z "$count" ]] || [[ ! "$count" =~ ^[0-9]+$ ]]; then
             count=0
