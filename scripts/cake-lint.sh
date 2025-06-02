@@ -15,10 +15,17 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 TARGET_PATH="${1:-$PROJECT_ROOT/cake}"
+VENV_PATH="$PROJECT_ROOT/.venv"
 
 # Status tracking
 FAILED_CHECKS=()
 PASSED_CHECKS=()
+
+# Activate virtual environment if it exists
+if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+    echo -e "${BLUE}[LINT]${NC} Activating virtual environment..."
+    source "$VENV_PATH/bin/activate"
+fi
 
 # Helper functions
 print_header() {
@@ -61,6 +68,7 @@ OPTIONS:
     --deadcode          Check for dead/unused code with vulture
     --all               Run ALL checks including optional ones
     --handoff           Auto-generate handoff doc when all checks pass
+    --create-pr         Create PR with conversation context after success
 
 ARGUMENTS:
     path                Path to check (default: cake/)
@@ -99,6 +107,7 @@ RUN_PYLINT=false
 RUN_DEADCODE=false
 RUN_ALL=false
 RUN_HANDOFF=false
+RUN_CREATE_PR=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -138,6 +147,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --handoff)
             RUN_HANDOFF=true
+            shift
+            ;;
+        --create-pr)
+            RUN_CREATE_PR=true
+            RUN_HANDOFF=true  # PR creation requires handoff
             shift
             ;;
         *)
@@ -406,6 +420,17 @@ else
             "$SCRIPT_DIR/cake-handoff.sh"
         else
             print_warning "cake-handoff.sh not found or not executable"
+        fi
+    fi
+    
+    # Create PR if requested
+    if [ "$RUN_CREATE_PR" = true ]; then
+        echo
+        print_status "Creating PR with conversation context..."
+        if [ -x "$SCRIPT_DIR/cake-create-pr.sh" ]; then
+            "$SCRIPT_DIR/cake-create-pr.sh"
+        else
+            print_warning "cake-create-pr.sh not found or not executable"
         fi
     fi
     
