@@ -277,7 +277,13 @@ if ! git push -u origin "$CURRENT_BRANCH" 2>/dev/null; then
 fi
 
 # Create PR using gh CLI
-PR_TITLE="feat: $(git log -1 --pretty=%s)"
+# Generate PR title - avoid duplicate prefixes
+LATEST_COMMIT=$(git log -1 --pretty=%s)
+if echo "$LATEST_COMMIT" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: "; then
+    PR_TITLE="$LATEST_COMMIT"
+else
+    PR_TITLE="feat: $LATEST_COMMIT"
+fi
 print_status "Creating PR with title: $PR_TITLE"
 
 # Save PR body to temp file (gh has issues with heredocs sometimes)

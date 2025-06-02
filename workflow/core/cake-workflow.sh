@@ -148,8 +148,14 @@ if [ "$UNCOMMITTED" -gt 0 ]; then
                 ;;
         esac
     else
-        # Auto mode: commit with generated message
-        run_command "git add -A && git commit -m 'chore: auto-commit changes from cake-workflow'" "Auto-commit"
+        # Auto mode: commit with generated message based on changes
+        FILES_CHANGED=$(git diff --cached --name-only | head -5 | xargs basename -a | paste -sd, -)
+        if [ -n "$FILES_CHANGED" ]; then
+            COMMIT_MSG="chore: update $FILES_CHANGED and related files"
+        else
+            COMMIT_MSG="chore: workflow automation updates"
+        fi
+        run_command "git add -A && git commit -m '$COMMIT_MSG'" "Auto-commit"
     fi
 else
     print_success "No uncommitted changes"
