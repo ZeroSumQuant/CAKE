@@ -345,7 +345,7 @@ fi
 
 # Check for proper logging (no print statements in production code)
 # Skip this check if we're checking the scripts directory
-if [[ ! "$TARGET_PATH" =~ scripts ]]; then
+if [[ "$TARGET_PATH" != *"scripts"* ]]; then
     PRINT_COUNT=0
     while IFS= read -r -d '' file; do
         # Count print statements not in comments
