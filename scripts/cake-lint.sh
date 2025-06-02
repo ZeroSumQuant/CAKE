@@ -332,7 +332,7 @@ print_status "Running CAKE-specific checks..."
 ERROR_HANDLING=0
 while IFS= read -r -d '' file; do
     if grep -q "except:" "$file" 2>/dev/null; then
-        ((ERROR_HANDLING++))
+        ERROR_HANDLING=$((ERROR_HANDLING + 1))
     fi
 done < <(find "$TARGET_PATH" -name "*.py" -type f -print0 2>/dev/null)
 
@@ -349,8 +349,12 @@ if [[ ! "$TARGET_PATH" =~ scripts ]]; then
     PRINT_COUNT=0
     while IFS= read -r -d '' file; do
         # Count print statements not in comments
-        count=$(grep "print(" "$file" 2>/dev/null | grep -v "#.*print(" | wc -l | tr -d ' ' || echo "0")
-        ((PRINT_COUNT += count))
+        count=$(grep "print(" "$file" 2>/dev/null | grep -v "#.*print(" | wc -l | tr -d ' ')
+        # Ensure count is a valid number
+        if [[ -z "$count" ]] || [[ ! "$count" =~ ^[0-9]+$ ]]; then
+            count=0
+        fi
+        PRINT_COUNT=$((PRINT_COUNT + count))
     done < <(find "$TARGET_PATH" -name "*.py" -type f -print0 2>/dev/null)
     
     if [ "$PRINT_COUNT" -gt 0 ]; then
