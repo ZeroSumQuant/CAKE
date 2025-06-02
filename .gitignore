@@ -81,6 +81,13 @@ metrics/*.json
 .cake-cache/
 .cake/
 
+# Temporary reports and lint output
+lint-*.txt
+lint-*.json
+bandit-report.json
+*-report.txt
+*-output.txt
+
 # Security - NEVER commit these
 .env
 .env.*
