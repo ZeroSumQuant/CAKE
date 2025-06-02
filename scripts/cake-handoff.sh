@@ -20,6 +20,12 @@ TASK_LOG="$DOCS_DIR/task_log.md"
 DATE=$(date +%Y-%m-%d)
 TIME=$(date +%H:%M)
 HANDOFF_COUNT=1
+VENV_PATH="$PROJECT_ROOT/.venv"
+
+# Activate virtual environment if it exists (for Python JSON parsing)
+if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+    source "$VENV_PATH/bin/activate"
+fi
 
 # Find next handoff number for today
 if [ -d "$HANDOFF_DIR" ]; then

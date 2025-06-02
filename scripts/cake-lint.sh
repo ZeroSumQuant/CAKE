@@ -15,10 +15,17 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 TARGET_PATH="${1:-$PROJECT_ROOT/cake}"
+VENV_PATH="$PROJECT_ROOT/.venv"
 
 # Status tracking
 FAILED_CHECKS=()
 PASSED_CHECKS=()
+
+# Activate virtual environment if it exists
+if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+    echo -e "${BLUE}[LINT]${NC} Activating virtual environment..."
+    source "$VENV_PATH/bin/activate"
+fi
 
 # Helper functions
 print_header() {

@@ -18,6 +18,12 @@ TODAY=$(date +%Y-%m-%d)
 TIME=$(date +%H:%M)
 CONTEXT_DIR="$PROJECT_ROOT/.cake/conversation-context"
 CI_LOG_DIR="$PROJECT_ROOT/.cake/ci-logs"
+VENV_PATH="$PROJECT_ROOT/.venv"
+
+# Activate virtual environment if it exists (for Python linting tools)
+if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+    source "$VENV_PATH/bin/activate"
+fi
 
 # Helper functions
 print_header() {

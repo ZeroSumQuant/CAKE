@@ -17,6 +17,11 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 TODAY=$(date +%Y-%m-%d)
 VENV_PATH="$PROJECT_ROOT/.venv"
 
+# Activate virtual environment if it exists (for Python JSON parsing and claude-extract)
+if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+    source "$VENV_PATH/bin/activate"
+fi
+
 # Helper functions
 print_header() {
     echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

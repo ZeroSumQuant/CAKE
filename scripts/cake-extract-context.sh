@@ -14,8 +14,14 @@ TODAY=$(date +%Y-%m-%d)
 # Ensure output directory exists
 mkdir -p "$OUTPUT_DIR"
 
-# Activate virtual environment
-source "$VENV_PATH/bin/activate"
+# Activate virtual environment if it exists
+if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
+    source "$VENV_PATH/bin/activate"
+else
+    echo "Warning: Virtual environment not found at $VENV_PATH"
+    echo "Make sure claude-conversation-extractor is installed"
+    exit 1
+fi
 
 # Extract recent conversation
 CONVERSATION_RAW="$OUTPUT_DIR/conversation-${TODAY}.raw"
