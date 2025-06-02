@@ -15,7 +15,8 @@ NC='\033[0m'
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+WORKFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Helper functions
 print_banner() {
@@ -76,7 +77,7 @@ case "$MODE" in
         print_info "Running in automatic mode"
         ;;
     "status"|"-s")
-        exec "$SCRIPT_DIR/cake-status.sh"
+        exec "$WORKFLOW_DIR/core/cake-status.sh"
         ;;
     "help"|"-h"|"--help")
         cat << EOF
@@ -112,7 +113,7 @@ esac
 
 # Step 1: Status Check
 print_step "1/7" "Checking current status"
-"$SCRIPT_DIR/cake-status.sh"
+"$WORKFLOW_DIR/core/cake-status.sh"
 
 if [ "$MODE" = "interactive" ]; then
     wait_for_user
@@ -147,8 +148,14 @@ if [ "$UNCOMMITTED" -gt 0 ]; then
                 ;;
         esac
     else
-        # Auto mode: commit with generated message
-        run_command "git add -A && git commit -m 'chore: auto-commit changes from cake-workflow'" "Auto-commit"
+        # Auto mode: commit with generated message based on changes
+        FILES_CHANGED=$(git diff --cached --name-only | head -5 | xargs basename -a | paste -sd, -)
+        if [ -n "$FILES_CHANGED" ]; then
+            COMMIT_MSG="chore: update $FILES_CHANGED and related files"
+        else
+            COMMIT_MSG="chore: workflow automation updates"
+        fi
+        run_command "git add -A && git commit -m '$COMMIT_MSG'" "Auto-commit"
     fi
 else
     print_success "No uncommitted changes"
@@ -167,7 +174,7 @@ if [ -f "$PROJECT_ROOT/.cake/lint-status" ]; then
 fi
 
 if [ "$LINT_NEEDED" = true ]; then
-    if ! run_command "$SCRIPT_DIR/cake-lint.sh" "Linting"; then
+    if ! run_command "$PROJECT_ROOT/scripts/validation/cake-lint.sh" "Linting"; then
         print_error "Linting failed"
         
         if [ "$MODE" = "interactive" ]; then
@@ -179,10 +186,10 @@ if [ "$LINT_NEEDED" = true ]; then
             
             case "$choice" in
                 1)
-                    "$SCRIPT_DIR/cake-lint.sh" --verbose
+                    "$PROJECT_ROOT/scripts/validation/cake-lint.sh" --verbose
                     ;;
                 2)
-                    "$SCRIPT_DIR/cake-lint.sh"
+                    "$PROJECT_ROOT/scripts/validation/cake-lint.sh"
                     ;;
                 3)
                     print_info "Skipping lint fixes"
@@ -191,7 +198,7 @@ if [ "$LINT_NEEDED" = true ]; then
         else
             # Auto mode: try to fix
             print_info "Attempting auto-fix in auto mode"
-            "$SCRIPT_DIR/cake-lint.sh" || true
+            "$PROJECT_ROOT/scripts/validation/cake-lint.sh" || true
         fi
     fi
 fi
@@ -199,7 +206,7 @@ fi
 # Step 4: Generate documentation
 print_step "4/7" "Generating documentation"
 
-if ! run_command "$SCRIPT_DIR/cake-handoff.sh" "Documentation generation"; then
+if ! run_command "$WORKFLOW_DIR/documentation/cake-handoff.sh" "Documentation generation"; then
     print_error "Documentation generation failed"
     print_info "This is usually not critical, continuing..."
 fi
@@ -222,11 +229,11 @@ if [ -z "$PR_EXISTS" ]; then
     if [ "$MODE" = "interactive" ]; then
         read -p "Create PR now? [Y/n]: " create_pr
         if [[ "$create_pr" =~ ^[Yy]?$ ]]; then
-            run_command "$SCRIPT_DIR/cake-create-pr.sh" "PR creation"
+            run_command "$WORKFLOW_DIR/documentation/cake-create-pr.sh" "PR creation"
         fi
     else
         # Auto mode: create PR
-        run_command "$SCRIPT_DIR/cake-create-pr.sh" "PR creation"
+        run_command "$WORKFLOW_DIR/documentation/cake-create-pr.sh" "PR creation"
     fi
 else
     PR_NUMBER=$(echo "$PR_EXISTS" | jq -r '.number')
@@ -287,7 +294,7 @@ echo -e "${GREEN}    Workflow Summary${NC}"
 echo -e "${GREEN}═══════════════════════════════════${NC}"
 
 # Show final status
-"$SCRIPT_DIR/cake-status.sh" | grep -E "(Branch:|PR #|Lint:|CI/CD)" || true
+"$WORKFLOW_DIR/core/cake-status.sh" | grep -E "(Branch:|PR #|Lint:|CI/CD)" || true
 
 echo -e "\n${CYAN}Quick actions:${NC}"
 echo "  • View PR:        gh pr view --web"

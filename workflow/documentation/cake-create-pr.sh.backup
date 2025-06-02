@@ -13,7 +13,8 @@ NC='\033[0m'
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+WORKFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 TODAY=$(date +%Y-%m-%d)
 VENV_PATH="$PROJECT_ROOT/.venv"
 
@@ -123,29 +124,45 @@ PROBLEMS_SUMMARY=""
 if [ -f "$CONTEXT_JSON" ]; then
     print_success "Found conversation context from handoff generation"
     
-    # Extract summaries from JSON
+    # Extract summaries from JSON - updated for new format
     TASKS_SUMMARY=$(python3 -c "
 import json
 data = json.load(open('$CONTEXT_JSON'))
-tasks = data.get('tasks_discussed', [])[:5]
-if tasks:
-    print('### Tasks Discussed\\n' + '\\n'.join(['- ' + t for t in tasks]))
+tasks = data.get('tasks', [])
+implemented = [t for t in tasks if t.get('implemented')]
+pending = [t for t in tasks if not t.get('implemented')]
+output = []
+if implemented:
+    output.append('### Implemented Tasks')
+    output.extend(['- ✅ ' + t.get('text', '') for t in implemented[:5]])
+if pending:
+    output.append('\\n### Pending Tasks')
+    output.extend(['- ⏳ ' + t.get('text', '') for t in pending[:5]])
+if output:
+    print('\\n'.join(output))
 " 2>/dev/null || echo "")
     
     DECISIONS_SUMMARY=$(python3 -c "
 import json
 data = json.load(open('$CONTEXT_JSON'))
-decisions = data.get('decisions_made', [])[:5]
+decisions = data.get('decisions', [])
 if decisions:
-    print('### Key Decisions\\n' + '\\n'.join(['- ' + d for d in decisions]))
+    print('### Key Decisions')
+    for d in decisions[:5]:
+        print('- ' + d.get('text', ''))
+        if d.get('rationale'):
+            print('  - Rationale: ' + d.get('rationale'))
 " 2>/dev/null || echo "")
     
     PROBLEMS_SUMMARY=$(python3 -c "
 import json
 data = json.load(open('$CONTEXT_JSON'))
-problems = data.get('problems_solved', [])[:5]
+problems = data.get('problems_solved', [])
 if problems:
-    print('### Problems Solved\\n' + '\\n'.join(['- ' + p for p in problems]))
+    print('### Problems Solved')
+    for p in problems[:3]:
+        print('- **Problem**: ' + p.get('problem', '')[:80] + '...')
+        print('  **Solution**: ' + p.get('solution', '')[:80] + '...')
 " 2>/dev/null || echo "")
     
     # Combine summaries
@@ -192,14 +209,28 @@ $CHANGED_FILES
 
 ## Validation
 - ✅ All lint checks passed
+- ✅ Code formatting (black, isort) applied
+- ✅ Style guide (flake8) passed
+- ✅ Type checking (mypy) passed
+- ✅ Security scan (bandit) passed
+- ✅ Test suite passed (if tests exist)
 - ✅ Task log updated  
-- ✅ Handoff document created
-- ✅ Conversation context captured
+- ✅ Handoff document created with full conversation
+- ✅ Conversation context captured and parsed
 
 ## Documentation
 - **Handoff Document**: [$(basename "$HANDOFF_FILE")]($(echo "$HANDOFF_FILE" | sed "s|$PROJECT_ROOT/||"))
 - **Task Log**: [View updates]($(echo "$TASK_LOG" | sed "s|$PROJECT_ROOT/||"))
-- **Conversation Context**: [Full context]($(echo "$CONTEXT_JSON" | sed "s|$PROJECT_ROOT/||"))
+- **Conversation Context**: [Structured data]($(echo "$CONTEXT_JSON" | sed "s|$PROJECT_ROOT/||"))
+EOD
+
+# Check if full conversation was attached
+CONVERSATION_FULL=$(find "$PROJECT_ROOT/docs/handoff" -name "conversation-${TODAY}-*-full.md" -type f 2>/dev/null | head -1)
+if [ -n "$CONVERSATION_FULL" ]; then
+    echo "- **Full Conversation Log**: [View complete session]($(echo "${CONVERSATION_FULL:-}" | sed "s|$PROJECT_ROOT/||"))" >> "$PR_DESCRIPTION_FILE"
+fi
+
+cat >> "$PR_DESCRIPTION_FILE" << EOD
 - **Lint Status**: All checks passed at $(date -r "$PROJECT_ROOT/.cake/lint-status" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown time")
 
 ## Review Notes

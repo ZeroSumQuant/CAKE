@@ -52,6 +52,10 @@ commitizen>=3.13  # conventional commits
 watchdog>=3.0     # file system monitoring
 claude-conversation-extractor>=1.0.0  # PR context extraction
 
+# NLP dependencies for conversation parser
+spacy>=3.7.0,<4.0.0  # NLP processing with deterministic mode
+mistune>=3.0.0       # Fast markdown parser for conversation structure
+
 # Performance profiling
 py-spy>=0.3
 memory-profiler>=0.61

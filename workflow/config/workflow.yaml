@@ -1,0 +1,135 @@
+# CAKE Workflow Configuration
+# This file configures the behavior of the Claude workflow automation system
+
+workflow:
+  version: "1.0"
+  mode: "interactive"  # Options: interactive, auto
+  
+# Conversation extraction settings
+extraction:
+  # Use NLP parser when available
+  use_nlp_parser: true
+  fallback_to_regex: true
+  
+  # Locations where Claude conversations are saved
+  conversation_locations:
+    - "/Users/dustinkirby/Desktop/Claude logs"
+    - "/Users/dustinkirby/Desktop/Claude_logs"
+    - "/Users/dustinkirby/Desktop"
+  
+  # Parser settings
+  parser:
+    max_messages: 1000
+    timeout_seconds: 30
+    confidence_threshold: 0.7
+    
+# Documentation generation settings  
+documentation:
+  handoff:
+    # Include full conversation in handoff
+    include_conversation: true
+    # Maximum items to include in each category
+    max_tasks: 10
+    max_decisions: 10
+    max_problems: 10
+    max_insights: 10
+    # Session tracking
+    auto_increment_session: true
+    
+  pr:
+    # PR template to use
+    template: "default"
+    # Auto-generate PR title from commits
+    auto_title: true
+    # Include context summary
+    include_context: true
+    # Add labels
+    labels:
+      - "claude-generated"
+    
+# CI/CD integration settings
+ci:
+  # Automatic fix settings
+  auto_fix:
+    enabled: true
+    # Tools that can be run automatically
+    allowed_tools:
+      - "black"
+      - "isort"
+    # Maximum fix attempts
+    max_attempts: 3
+    
+  # Monitor settings
+  monitor:
+    enabled: true
+    timeout_seconds: 300
+    check_interval: 30
+    
+  # Failure handling
+  on_failure:
+    save_logs: true
+    create_issue: false
+    notify_webhook: ""
+    
+# Linting settings
+linting:
+  # Run before commit
+  pre_commit: true
+  # Tools to run
+  tools:
+    - "black"
+    - "isort"
+    - "flake8"
+    - "mypy"
+    - "bandit"
+    - "safety"
+  # Fail on any issue
+  strict_mode: false
+  
+# Git settings
+git:
+  # Automatic commit
+  auto_commit: false
+  # Commit message template
+  commit_template: "conventional"  # Options: conventional, simple
+  # Branch naming
+  branch_prefix: "claude-"
+  
+# Notification settings
+notifications:
+  # Desktop notifications
+  desktop:
+    enabled: false
+    on_success: false
+    on_failure: true
+    
+  # Webhook notifications
+  webhook:
+    enabled: false
+    url: ""
+    
+# Advanced settings
+advanced:
+  # Parallel execution
+  parallel:
+    enabled: false
+    max_workers: 4
+    
+  # Caching
+  cache:
+    enabled: true
+    ttl_hours: 24
+    
+  # Telemetry
+  telemetry:
+    enabled: false
+    endpoint: ""
+    
+# Debug settings
+debug:
+  # Verbose output
+  verbose: false
+  # Keep temporary files
+  keep_temp_files: false
+  # Log level
+  log_level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR

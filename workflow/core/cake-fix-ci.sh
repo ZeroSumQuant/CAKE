@@ -13,7 +13,8 @@ NC='\033[0m'
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+WORKFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 TODAY=$(date +%Y-%m-%d)
 TIME=$(date +%H:%M)
 CONTEXT_DIR="$PROJECT_ROOT/.cake/conversation-context"
