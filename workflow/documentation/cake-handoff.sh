@@ -13,7 +13,8 @@ NC='\033[0m'
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+WORKFLOW_DIR="$(dirname "$SCRIPT_DIR")"
 DOCS_DIR="$PROJECT_ROOT/docs"
 HANDOFF_DIR="$DOCS_DIR/handoff"
 TASK_LOG="$DOCS_DIR/task_log.md"
@@ -55,17 +56,18 @@ mkdir -p "$HANDOFF_DIR"
 # Extract conversation context if available
 CONTEXT_JSON="$PROJECT_ROOT/.cake/conversation-context/conversation-${DATE}.json"
 CONVERSATION_CONTEXT=""
-if [ -x "$SCRIPT_DIR/cake-extract-context.sh" ]; then
+WORKFLOW_DIR="$PROJECT_ROOT/workflow"
+if [ -x "$WORKFLOW_DIR/extraction/cake-extract-context.sh" ]; then
     print_status "Extracting conversation context..."
-    "$SCRIPT_DIR/cake-extract-context.sh" >/dev/null 2>&1 || true
+    "$WORKFLOW_DIR/extraction/cake-extract-context.sh" >/dev/null 2>&1 || true
     
     if [ -f "$CONTEXT_JSON" ]; then
         CONVERSATION_CONTEXT="Available"
-        # Parse JSON to get key data
-        TASKS_DISCUSSED=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); print('\n'.join(['- ' + t for t in data.get('tasks_discussed', [])]))" 2>/dev/null || echo "")
-        DECISIONS_MADE=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); print('\n'.join(['- ' + d for d in data.get('decisions_made', [])]))" 2>/dev/null || echo "")
-        PROBLEMS_SOLVED=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); print('\n'.join(['- ' + p for p in data.get('problems_solved', [])]))" 2>/dev/null || echo "")
-        KEY_INSIGHTS=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); print('\n'.join(['- ' + i for i in data.get('key_insights', [])]))" 2>/dev/null || echo "")
+        # Parse JSON to get key data - updated for new format
+        TASKS_DISCUSSED=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); tasks=data.get('tasks',[]); print('\n'.join(['- ' + t.get('text','') + (' ✓' if t.get('implemented') else '') for t in tasks[:10]]))" 2>/dev/null || echo "")
+        DECISIONS_MADE=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); decisions=data.get('decisions',[]); print('\n'.join(['- ' + d.get('text','') for d in decisions[:10]]))" 2>/dev/null || echo "")
+        PROBLEMS_SOLVED=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); probs=data.get('problems_solved',[]); print('\n'.join(['- ' + p.get('problem','') + ' → ' + p.get('solution','')[:50] + '...' for p in probs[:5]]))" 2>/dev/null || echo "")
+        KEY_INSIGHTS=$(python3 -c "import json; data=json.load(open('$CONTEXT_JSON')); print('\n'.join(['- ' + i for i in data.get('key_insights', [])[:5]]))" 2>/dev/null || echo "")
     else
         CONVERSATION_CONTEXT="Not available"
     fi
@@ -191,8 +193,28 @@ $(grep -r "TODO" "$PROJECT_ROOT" --include="*.py" --include="*.sh" --exclude-dir
 
 ### Conversation Context
 - **Status**: $CONVERSATION_CONTEXT
-- **Full conversation log**: ${CONTEXT_JSON#$PROJECT_ROOT/}
-- **Raw conversation**: ${CONTEXT_JSON%.json}.raw
+- **Structured data**: ${CONTEXT_JSON#$PROJECT_ROOT/}
+EOF
+
+# Copy full conversation if available
+CONVERSATION_MD="$PROJECT_ROOT/.cake/conversation-context/conversation-${DATE}.md"
+if [ -f "$CONVERSATION_MD" ]; then
+    CONVERSATION_COPY="$HANDOFF_DIR/conversation-${DATE}-${HANDOFF_COUNT}-full.md"
+    cp "$CONVERSATION_MD" "$CONVERSATION_COPY"
+    echo "- **Full conversation**: [conversation-${DATE}-${HANDOFF_COUNT}-full.md](conversation-${DATE}-${HANDOFF_COUNT}-full.md)" >> "$HANDOFF_FILE"
+    print_success "Attached full conversation log"
+else
+    # Try to find the conversation in Desktop location
+    DESKTOP_CONV=$(find "/Users/dustinkirby/Desktop/Claude logs" -name "claude-conversation-*.md" -mtime 0 2>/dev/null | head -1)
+    if [ -n "$DESKTOP_CONV" ] && [ -f "$DESKTOP_CONV" ]; then
+        CONVERSATION_COPY="$HANDOFF_DIR/conversation-${DATE}-${HANDOFF_COUNT}-full.md"
+        cp "$DESKTOP_CONV" "$CONVERSATION_COPY"
+        echo "- **Full conversation**: [conversation-${DATE}-${HANDOFF_COUNT}-full.md](conversation-${DATE}-${HANDOFF_COUNT}-full.md)" >> "$HANDOFF_FILE"
+        print_success "Attached full conversation log from Desktop"
+    fi
+fi
+
+cat >> "$HANDOFF_FILE" << EOF
 3. **Before committing**: Run \`./scripts/cake-pre-commit.sh\`
 
 ---

@@ -21,6 +21,10 @@ VENV_PATH="$PROJECT_ROOT/.venv"
 FAILED_CHECKS=()
 PASSED_CHECKS=()
 
+# Options
+RUN_TESTS="${RUN_TESTS:-true}"
+AUTO_FIX="${AUTO_FIX:-true}"
+
 # Activate virtual environment if it exists
 if [ -d "$VENV_PATH" ] && [ -f "$VENV_PATH/bin/activate" ]; then
     echo -e "${BLUE}[LINT]${NC} Activating virtual environment..."
@@ -384,6 +388,33 @@ if [[ "$TARGET_PATH" != *"scripts"* ]]; then
     fi
 else
     print_success "Print statements allowed in scripts"
+fi
+
+# 7. pytest - Test Suite
+if [ "$RUN_TESTS" = true ]; then
+    print_status "Running test suite..."
+    if command -v pytest &> /dev/null; then
+        # Check if tests directory exists
+        if [ -d "$PROJECT_ROOT/tests" ]; then
+            if [ "$VERBOSE" = true ]; then
+                if pytest "$PROJECT_ROOT/tests" -v --cov=cake --cov-report=term-missing; then
+                    print_success "pytest: All tests passed"
+                else
+                    print_error "pytest: Tests failed"
+                fi
+            else
+                if pytest "$PROJECT_ROOT/tests" -q --cov=cake --cov-report=term-missing:skip-covered; then
+                    print_success "pytest: All tests passed"
+                else
+                    print_error "pytest: Tests failed"
+                fi
+            fi
+        else
+            print_warning "No tests directory found"
+        fi
+    else
+        print_warning "pytest not installed (pip install pytest pytest-cov)"
+    fi
 fi
 
 # Summary
