@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""test_cake_core.py - Comprehensive test suite for CAKE
+"""
+test_cake_core.py - Comprehensive test suite for CAKE
 
 Implements unit, integration, and property-based tests
 to achieve >90% coverage as required by Poopy-Hat.
@@ -48,7 +49,8 @@ from cake.utils.rule_creator import RuleCreator, RuleProposal, RuleValidator
 
 # Test Fixtures and Factories
 class ConstitutionFactory(Factory):
-    """Factory for Constitution test data."""
+    """
+    Factory for Constitution test data."""
     class Meta:
         model = Constitution
 
@@ -79,7 +81,8 @@ class TaskRunFactory(Factory):
 # Database Fixtures
 @pytest_asyncio.fixture
 async def test_db():
-    """Create test database."""# Use in-memory SQLite for tests
+    """Create test database."""
+    # Use in-memory SQLite for tests
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
 
     async with engine.begin() as conn:
@@ -95,7 +98,8 @@ async def test_db():
 
 @pytest_asyncio.fixture
 async def persistence_layer():
-    """Create test persistence layer."""config = DatabaseConfig(database_url="sqlite+aiosqlite:///:memory:", pool_size=5)
+    """Create test persistence layer."""
+    config = DatabaseConfig(database_url="sqlite+aiosqlite:///:memory:", pool_size=5)
 
     persistence = PersistenceLayer(config)
     await persistence.init_db()
@@ -107,7 +111,8 @@ async def persistence_layer():
 
 @pytest_asyncio.fixture
 async def redis_client():
-    """Create test Redis client."""# Use fakeredis for testing
+    """Create test Redis client."""
+    # Use fakeredis for testing
     import fakeredis.aioredis
 
     client = fakeredis.aioredis.FakeRedis()
@@ -117,7 +122,8 @@ async def redis_client():
 
 @pytest.fixture
 def mock_claude_client():
-    """Mock Claude client for testing."""client = AsyncMock()
+    """Mock Claude client for testing."""
+    client = AsyncMock()
     client.chat = AsyncMock(return_value=Mock(content="Test response"))
     return client
 
@@ -127,10 +133,10 @@ class TestStrategist:
     """Test the Strategist decision engine."""
     @pytest.fixture
     def strategist(self, tmp_path):
-        """Create test strategist with policy."""policy_file = tmp_path / "test_policy.yaml"
+        """Create test strategist with policy."""
+        policy_file = tmp_path / "test_policy.yaml"
         policy_file.write_text(
             """
-default:
   fail_threshold: 3
   cost_limit: 5.0
 
@@ -140,19 +146,21 @@ abort_conditions:
 
 escalate_conditions:
   - "stage == 'execute' and failure_count >= 3"
-""")
+"""
+    )
         return Strategist(policy_file)
 
     def test_abort_on_cost_overrun(self, strategist):
-        """Test abort decision on cost overrun."""state = {"stage": "execute", "failure_count": 1, "cost": 6.0, "budget": 5.0, "error": ""}
-
+        """Test abort decision on cost overrun."""
+        state = {"stage": "execute", "failure_count": 1, "cost": 6.0, "budget": 5.0, "error": ""}
         decision = strategist.decide(state)
 
         assert decision.action == Decision.ABORT
         assert "Cost exceeded" in decision.reason
 
     def test_escalate_on_repeated_failures(self, strategist):
-        """Test escalation on repeated failures."""state = {
+        """Test escalation on repeated failures."""
+        state = {
             "stage": "execute",
             "failure_count": 3,
             "cost": 1.0,
@@ -166,7 +174,8 @@ escalate_conditions:
         assert decision.confidence > 0.8
 
     def test_proceed_when_no_issues(self, strategist):
-        """Test proceed decision when everything is fine."""state = {"stage": "think", "failure_count": 0, "cost": 0.5, "budget": 5.0, "error": ""}
+        """Test proceed decision when everything is fine."""
+        state = {"stage": "think", "failure_count": 0, "cost": 0.5, "budget": 5.0, "error": ""}
 
         decision = strategist.decide(state)
 
@@ -178,16 +187,17 @@ escalate_conditions:
         budget=st.floats(min_value=1, max_value=10),
     )
     def test_decision_determinism(self, strategist, failure_count, cost, budget):
-        """Property: Same state always produces same decision."""state = {
+        """Property: Same state always produces same decision."""
+        state = {
             "stage": "execute",
             "failure_count": failure_count,
             "cost": cost,
             "budget": budget,
             "error": "Test error",
         }
-
         decision1 = strategist.decide(state)
         decision2 = strategist.decide(state)
+
 
         assert decision1.action == decision2.action
         assert decision1.confidence == decision2.confidence
@@ -197,10 +207,12 @@ class TestStageRouter:
     """Test the stage navigation system."""
     @pytest.fixture
     def router(self):
-        """Create test router."""return StageRouter()
+        """Create test router."""
+        return StageRouter()
 
     def test_forward_progression(self, router):
-        """Test normal forward stage progression."""router.set_current_stage("think")
+        """Test normal forward stage progression."""
+        router.set_current_stage("think")
 
         decision = StrategyDecision(action=Decision.PROCEED)
         next_stage = router.next_stage("think", decision)
@@ -208,7 +220,8 @@ class TestStageRouter:
         assert next_stage == "research"
 
     def test_backtracking(self, router):
-        """Test backtracking to previous stages."""router.set_current_stage("validate")
+        """Test backtracking to previous stages."""
+        router.set_current_stage("validate")
 
         decision = StrategyDecision(
             action=Decision.REROUTE, target_stage="execute", reason="Validation failed"
@@ -221,7 +234,8 @@ class TestStageRouter:
         assert router.history[0].reason == "Validation failed"
 
     def test_invalid_transition_prevention(self, router):
-        """Test that invalid transitions are prevented."""router.set_current_stage("think")
+        """Test that invalid transitions are prevented."""
+        router.set_current_stage("think")
 
         # Try to jump to solidify (not allowed directly)
         decision = StrategyDecision(action=Decision.REROUTE, target_stage="solidify")
@@ -233,7 +247,8 @@ class TestStageRouter:
         assert next_stage in ["research", "decide"]  # Valid next steps
 
     def test_transition_analysis(self, router):
-        """Test transition analysis capabilities."""# Simulate some transitions
+        """Test transition analysis capabilities."""
+        # Simulate some transitions
         stages = ["think", "research", "reflect", "research", "reflect", "decide"]
 
         for i in range(len(stages) - 1):
@@ -252,7 +267,8 @@ class TestRuleValidator:
     """Test rule validation for safety."""
     @pytest.fixture
     def validator(self):
-        """Create test validator."""return RuleValidator()
+        """Create test validator."""
+        return RuleValidator()
 
     @pytest.mark.parametrize(
         "dangerous_cmd",
@@ -265,7 +281,8 @@ class TestRuleValidator:
         ],
     )
     def test_dangerous_command_rejection(self, validator, dangerous_cmd):
-        """Test that dangerous commands are rejected."""proposal = RuleProposal(
+        """Test that dangerous commands are rejected."""
+        proposal = RuleProposal(
             signature="test",
             check_expression="True",
             fix_command=dangerous_cmd,
@@ -289,7 +306,8 @@ class TestRuleValidator:
         ],
     )
     def test_safe_command_acceptance(self, validator, safe_cmd):
-        """Test that safe commands are accepted."""proposal = RuleProposal(
+        """Test that safe commands are accepted."""
+        proposal = RuleProposal(
             signature="test",
             check_expression="stage == 'execute'",
             fix_command=safe_cmd,
@@ -305,7 +323,8 @@ class TestRuleValidator:
     @given(st.text(min_size=1, max_size=1000))
     @settings(max_examples=50)
     def test_expression_validation_doesnt_crash(self, validator, expression):
-        """Property: Validator never crashes on any input."""issues = validator.validate_expression(expression)
+        """Property: Validator never crashes on any input."""
+        issues = validator.validate_expression(expression)
         assert isinstance(issues, list)
 
 
@@ -314,10 +333,10 @@ class TestPersistenceIntegration:
     """Test database operations integration."""
     @pytest.mark.asyncio
     async def test_task_run_lifecycle(self, persistence_layer):
-        """Test complete task run lifecycle."""async with persistence_layer.session() as session:
+        """Test complete task run lifecycle."""
+        async with persistence_layer.session() as session:
             # Create constitution
             constitution = ConstitutionFactory.build()
-            session.add(constitution)
             await session.commit()
 
             # Create task run
@@ -337,7 +356,8 @@ class TestPersistenceIntegration:
 
     @pytest.mark.asyncio
     async def test_rule_matching_and_application(self, persistence_layer):
-        """Test rule creation, matching, and application."""async with persistence_layer.session() as session:
+        """Test rule creation, matching, and application."""
+        async with persistence_layer.session() as session:
             rule_repo = persistence_layer.get_rule_repository(session)
 
             # Create rule
@@ -396,7 +416,8 @@ class TestRateLimiter:
     """Test rate limiting functionality."""
     @pytest.mark.asyncio
     async def test_token_bucket_basic(self, redis_client):
-        """Test basic token bucket functionality."""limiter = RateLimiter(redis_client)
+        """Test basic token bucket functionality."""
+        limiter = RateLimiter(redis_client)
 
         # Should allow first requests
         for _ in range(5):
@@ -410,7 +431,8 @@ class TestRateLimiter:
 
     @pytest.mark.asyncio
     async def test_token_refill(self, redis_client):
-        """Test token refill over time."""limiter = RateLimiter(redis_client)
+        """Test token bucket refill mechanism."""
+        limiter = RateLimiter(redis_client)
 
         # Use up all tokens
         for _ in range(3):
@@ -433,7 +455,8 @@ class TestAPIIntegration:
     """Test FastAPI application."""
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
-        """Test health check endpoint."""from fastapi.testclient import TestClient
+        """Test health check endpoint."""
+        from fastapi.testclient import TestClient
 
         from cake.api import app
 
@@ -446,7 +469,8 @@ class TestAPIIntegration:
 
     @pytest.mark.asyncio
     async def test_task_creation_flow(self):
-        """Test complete task creation flow."""# Would use TestClient with proper setup
+        """Test complete task creation flow."""
+        # Would use TestClient with proper setup
         pass
 
 
@@ -470,7 +494,8 @@ class CAKEStateMachine(RuleBasedStateMachine):
         cost=st.floats(min_value=0.01, max_value=1.0),
     )
     def make_decision(self, decision_type, cost):
-        """Make a strategic decision."""self.decisions_made.append(decision_type)
+        """Make a strategic decision."""
+        self.decisions_made.append(decision_type)
         self.total_cost += cost
 
         # Simple state transition logic
@@ -488,15 +513,18 @@ class CAKEStateMachine(RuleBasedStateMachine):
 
     @invariant()
     def cost_never_negative(self):
-        """Invariant: Cost never goes negative."""assert self.total_cost >= 0
+        """Invariant: Cost never goes negative."""
+        assert self.total_cost >= 0
 
     @invariant()
     def valid_stage_or_none(self):
-        """Invariant: Always in valid stage or None."""assert self.current_stage is None or self.current_stage in self.stages
+        """Invariant: Always in valid stage or None."""
+        assert self.current_stage is None or self.current_stage in self.stages
 
     @invariant()
     def no_infinite_loops(self):
-        """Invariant: No stage visited more than 10 times."""for stage, count in self.visit_count.items():
+        """Invariant: No stage visited more than 10 times."""
+        for stage, count in self.visit_count.items():
             assert count <= 10, f"Stage {stage} visited {count} times"
 
 

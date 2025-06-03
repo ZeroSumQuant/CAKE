@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""CAKE Testing Harness - Progressive Component Testing
+"""
+CAKE Testing Harness - Progressive Component Testing
 """
 
 import importlib
@@ -54,7 +55,8 @@ class TestHarness:
         self.failed_components: List[str] = []
 
     def test_component(self, component: ComponentTest) -> bool:
-        """Test a single component import"""print(f"\n{'='*60}")
+        """Test a single component import"""
+        print(f"\n{'='*60}")
         print(f"Testing: {component.name}")
         print(f"Module: {component.module_path}")
 
@@ -87,7 +89,8 @@ class TestHarness:
         return False
 
     def run_progressive_tests(self):
-        """Run tests in dependency order"""print("\nCAKE COMPONENT TESTING")
+        """Run tests in dependency order"""
+        print("\nCAKE COMPONENT TESTING")
         print("=" * 60)
 
         for component in COMPONENT_TESTS:

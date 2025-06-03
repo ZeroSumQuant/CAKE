@@ -1,4 +1,5 @@
-"""Main simulator engine for Bad Claude adversarial testing.
+"""
+Main simulator engine for Bad Claude adversarial testing.
 """
 
 import json
@@ -13,7 +14,9 @@ from .attack_patterns import AttackCategory, AttackPattern
 
 @dataclass
 class AttackResult:
-    """Result of an attack execution."""
+    """
+    Result of an attack execution."""
+
     attack_id: str
     attack_type: AttackCategory
     timestamp: datetime
@@ -31,13 +34,15 @@ class BadClaudeSimulator:
     This simulator provides controlled adversarial testing capabilities
     to ensure CAKE can properly detect and handle malicious behaviors.
     """
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the Bad Claude Simulator.
 
         Args:
             config: Configuration dictionary for simulator settings
-        """self.config = config or {}
+        """
+        self.config = config or {}
         self.logger = logging.getLogger(__name__)
         self.attack_history: List[AttackResult] = []
 
@@ -66,7 +71,8 @@ class BadClaudeSimulator:
 
         Returns:
             AttackResult containing execution details
-        """self.logger.info(f"Executing attack: {attack_pattern.name}")
+        """
+        self.logger.info(f"Executing attack: {attack_pattern.name}")
 
         # Get the appropriate attack handler
         attack_handler = self.attacks.get(attack_pattern.category)
@@ -112,7 +118,8 @@ class BadClaudeSimulator:
 
         Returns:
             List of AttackResults from the scenario
-        """self.logger.info(f"Running scenario: {scenario_name}")
+        """
+        self.logger.info(f"Running scenario: {scenario_name}")
 
         # Import scenarios dynamically
         from ..scenarios import get_scenario
@@ -147,7 +154,8 @@ class BadClaudeSimulator:
 
         Returns:
             Dictionary containing attack statistics and results
-        """total_attacks = len(self.attack_history)
+        """
+        total_attacks = len(self.attack_history)
         successful_attacks = sum(1 for r in self.attack_history if r.success)
         detected_attacks = sum(1 for r in self.attack_history if r.detection_triggered)
 
@@ -166,11 +174,13 @@ class BadClaudeSimulator:
         return report
 
     def reset(self):
-        """Reset the simulator state."""self.attack_history.clear()
+        """Reset the simulator state."""
+        self.attack_history.clear()
         self.logger.info("Bad Claude Simulator reset")
 
     def _log_attack_result(self, result: AttackResult):
-        """Log an attack result."""log_entry = {
+        """Log an attack result."""
+        log_entry = {
             "attack_id": result.attack_id,
             "type": result.attack_type.value,
             "success": result.success,
@@ -182,7 +192,8 @@ class BadClaudeSimulator:
             self.logger.info(f"Attack result: {json.dumps(log_entry)}")
 
     def _group_by_category(self) -> Dict[str, Dict[str, int]]:
-        """Group attack results by category."""categories = {}
+        """Group attack results by category."""
+        categories = {}
         for result in self.attack_history:
             cat_name = result.attack_type.value
             if cat_name not in categories:

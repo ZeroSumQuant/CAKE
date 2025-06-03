@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Check health of each CAKE component and identify what needs fixing.
+"""
+Check health of each CAKE component and identify what needs fixing.
 """
 
 import importlib
@@ -35,7 +36,8 @@ ADAPTER_COMPONENTS = [
 
 
 def check_component(name, module_path, class_name=None):
-    """Check if a component can be imported."""try:
+    """Check if a component can be imported."""
+    try:
         module = importlib.import_module(module_path)
         if class_name:
             if hasattr(module, class_name):

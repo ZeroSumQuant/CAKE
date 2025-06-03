@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Test suite for CAKE conversation parser
+"""
+Test suite for CAKE conversation parser
 """
 import json
 from pathlib import Path
@@ -18,10 +19,12 @@ from workflow.extraction.conversation_parser import (
 
 
 class TestConversationParser:
-    """Test the ConversationParser class."""
+    """
+    Test the ConversationParser class."""
     @pytest.fixture
     def parser(self):
-        """Create a parser instance."""with patch("spacy.load") as mock_load:
+        """Create a parser instance."""
+        with patch("spacy.load") as mock_load:
             # Mock spaCy model
             mock_nlp = Mock()
             mock_nlp.select_pipes = Mock()
@@ -33,7 +36,8 @@ class TestConversationParser:
 
     @pytest.fixture
     def sample_conversation(self):
-        """Sample conversation in markdown format."""return """## 👤 User
+        """Sample conversation in markdown format."""
+        return """## 👤 User
 
 I need to implement a parser for Claude conversations. We should use spaCy for NLP processing.
 
@@ -70,8 +74,9 @@ I've implemented comprehensive tests in `tests/unit/test_conversation_parser.py`
 """
 
     def test_parse_markdown_turns(self, parser, sample_conversation):
-        """Test parsing conversation into turns."""turns = parser._parse_markdown_turns(sample_conversation)
-
+        """
+        Test parsing conversation into turns."""
+        turns = parser._parse_markdown_turns(sample_conversation)
         assert len(turns) == 6
         assert turns[0].speaker == "human"
         assert turns[1].speaker == "assistant"
@@ -85,7 +90,8 @@ I've implemented comprehensive tests in `tests/unit/test_conversation_parser.py`
         assert "conversation_parser.py" in turns[1].content
 
     def test_extract_tasks(self, parser):
-        """Test task extraction from human messages."""# Mock spaCy document
+        """Test task extraction from human messages."""
+        # Mock spaCy document
         mock_doc = Mock()
         mock_sent = Mock()
         mock_sent.text = "We need to implement a parser for conversations"
@@ -112,7 +118,8 @@ I've implemented comprehensive tests in `tests/unit/test_conversation_parser.py`
         assert context.tasks[0].speaker == "human"
 
     def test_extract_decisions(self, parser):
-        """Test decision extraction from assistant messages."""mock_doc = Mock()
+        """Test decision extraction from assistant messages."""
+        mock_doc = Mock()
         mock_sent = Mock()
         mock_sent.text = "I've decided to use spaCy for NLP processing"
         mock_doc.sents = [mock_sent]
@@ -135,7 +142,8 @@ I've implemented comprehensive tests in `tests/unit/test_conversation_parser.py`
         assert len(context.decisions) >= 0  # May or may not extract depending on implementation
 
     def test_extract_files_and_commands(self, parser):
-        """Test extraction of file paths and commands."""content = """
+        """Test extraction of file paths and commands."""
+        content = """
 I've created `cake/components/conversation_parser.py` and updated `requirements-dev.txt`.
 
 Run the following:
@@ -155,7 +163,8 @@ Run the following:
         assert "./scripts/cake-test.sh" in command_mentions
 
     def test_extract_problems_and_solutions(self, parser):
-        """Test problem and solution extraction."""# Mock problem detection
+        """Test problem and solution extraction."""
+        # Mock problem detection
         mock_doc_problem = Mock()
         mock_sent_problem = Mock()
         mock_sent_problem.text = "encountering an import error with spacy"
@@ -203,7 +212,8 @@ Run the following:
         assert len(context.errors_encountered) >= 1
 
     def test_deterministic_output(self, parser):
-        """Test that parser produces deterministic output."""conversation = """## 👤 User
+        """Test that parser produces deterministic output."""
+        conversation = """## 👤 User
 Let's create a test.
 
 ## 🤖 Assistant
@@ -226,7 +236,8 @@ I'll create a test for you.
         assert context1.message_count == context2.message_count
 
     def test_confidence_scoring(self, parser):
-        """Test confidence score calculation."""context = ConversationContext()
+        """Test confidence score calculation."""
+        context = ConversationContext()
 
         # Add tasks with different characteristics
         task1 = ExtractedTask(
@@ -251,7 +262,8 @@ I'll create a test for you.
         assert decision.confidence == 0.9  # Has rationale
 
     def test_cake_pattern_recognition(self, parser):
-        """Test recognition of CAKE-specific patterns."""assert "cake-workflow" in parser.cake_patterns["cake_scripts"]
+        """Test recognition of CAKE-specific patterns."""
+        assert "cake-workflow" in parser.cake_patterns["cake_scripts"]
         assert "CakeController" in parser.cake_patterns["cake_components"]
         assert ".py" in parser.cake_patterns["file_extensions"]
 
@@ -266,7 +278,8 @@ I'll create a test for you.
         assert "config.yaml" in file_mentions
 
     def test_json_output(self, parser):
-        """Test JSON serialization of context."""context = ConversationContext()
+        """Test JSON serialization of context."""
+        context = ConversationContext()
 
         task = ExtractedTask(
             text="implement parser",
@@ -291,7 +304,8 @@ I'll create a test for you.
         assert parsed["decisions"][0]["rationale"] == "deterministic"
 
     def test_alternative_markdown_formats(self, parser):
-        """Test parsing different markdown conversation formats."""# Format 1: Human:/Assistant:
+        """Test parsing different markdown conversation formats."""
+        # Format 1: Human:/Assistant:
         format1 = """Human: I need help with parsing.
 Assistant: I'll help you with parsing.
 """
@@ -312,7 +326,8 @@ Assistant: I'll help you with parsing.
         assert turns2[1].speaker == "assistant"
 
     def test_performance_benchmark(self, parser):
-        """Test that parser meets performance requirements."""import time
+        """Test that parser meets performance requirements."""
+        import time
 
         # Create a large conversation (500+ messages)
         large_conversation = ""
@@ -341,7 +356,8 @@ Message {i*2+1}: I'll help you with task {i}. Created file{i}.py.
         assert context.message_count >= 500
 
     def test_error_handling(self, parser):
-        """Test parser error handling."""# Test with empty conversation
+        """Test parser error handling."""
+        # Test with empty conversation
         empty_context = parser.parse_conversation("")
         assert empty_context.message_count == 0
         assert len(empty_context.tasks) == 0

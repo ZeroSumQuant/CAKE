@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""CAKE Conversation Parser - Deterministic NLP-based conversation analyzer
+"""
+CAKE Conversation Parser - Deterministic NLP-based conversation analyzer
 
 This module provides high-quality, deterministic parsing of Claude conversations
 to extract meaningful information for documentation generation.
@@ -24,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ConversationTurn:
-    """Represents a single turn in the conversation."""
+    """
+    Represents a single turn in the conversation."""
+
     speaker: str  # 'human' or 'assistant'
     content: str
     timestamp: Optional[str] = None
@@ -35,6 +38,7 @@ class ConversationTurn:
 @dataclass
 class ExtractedTask:
     """Represents a task discussed in the conversation."""
+
     text: str
     context: str
     speaker: str
@@ -46,7 +50,9 @@ class ExtractedTask:
 
 @dataclass
 class ExtractedDecision:
-    """Represents a decision made during the conversation."""
+    """
+    Represents a decision made during the conversation."""
+
     text: str
     rationale: str
     alternatives_considered: List[str] = field(default_factory=list)
@@ -57,6 +63,7 @@ class ExtractedDecision:
 @dataclass
 class ProblemSolution:
     """Represents a problem and its solution."""
+
     problem: str
     solution: str
     result: Optional[str] = None
@@ -65,7 +72,9 @@ class ProblemSolution:
 
 @dataclass
 class ConversationContext:
-    """Complete extracted context from a conversation."""
+    """
+    Complete extracted context from a conversation."""
+
     tasks: List[ExtractedTask] = field(default_factory=list)
     decisions: List[ExtractedDecision] = field(default_factory=list)
     problems_solved: List[ProblemSolution] = field(default_factory=list)
@@ -84,13 +93,15 @@ class ConversationParser:
     Uses spaCy for semantic analysis and mistune for markdown parsing.
     All randomness is disabled to ensure deterministic output.
     """
+
     def __init__(self, model_name: str = "en_core_web_sm"):
         """
         Initialize the parser with spaCy model.
 
         Args:
             model_name: Name of the spaCy model to use
-        """# Load spaCy with deterministic settings
+        """
+        # Load spaCy with deterministic settings
         self.nlp = spacy.load(model_name)
 
         # Disable components that introduce randomness
@@ -244,7 +255,8 @@ class ConversationParser:
         }
 
     def _init_cake_patterns(self) -> Dict[str, List[str]]:
-        """Initialize CAKE-specific pattern library."""return {
+        """Initialize CAKE-specific pattern library."""
+        return {
             "cake_scripts": [
                 "cake-workflow",
                 "cake-status",
@@ -305,7 +317,8 @@ class ConversationParser:
 
         Returns:
             ConversationContext with extracted information
-        """logger.info("Starting conversation parsing")
+        """
+        logger.info("Starting conversation parsing")
 
         # Calculate conversation hash for deterministic tracking
         conversation_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
@@ -363,7 +376,8 @@ class ConversationParser:
         return context
 
     def _parse_markdown_turns(self, content: str) -> List[ConversationTurn]:
-        """Parse markdown content into conversation turns."""turns = []
+        """Parse markdown content into conversation turns."""
+        turns = []
 
         # Try different markdown formats
         # Format 1: ## 👤 User / ## 🤖 Assistant
@@ -456,7 +470,8 @@ class ConversationParser:
         context: ConversationContext,
         current_tasks: Dict[str, ExtractedTask],
     ) -> None:
-        """Extract content from human turns."""# Use the original content for better extraction
+        """Extract content from human turns."""
+        # Use the original content for better extraction
         original_content = turn.content
 
         # Split into sentences
@@ -487,7 +502,8 @@ class ConversationParser:
         current_tasks: Dict[str, ExtractedTask],
         current_problems: Dict[str, str],
     ) -> None:
-        """Extract content from assistant turns."""original_content = turn.content
+        """Extract content from assistant turns."""
+        original_content = turn.content
 
         # Look for major accomplishments in headers
         accomplishment_patterns = [
@@ -576,7 +592,8 @@ class ConversationParser:
     def _extract_files_and_commands(
         self, content: str, file_mentions: Set[str], command_mentions: Set[str]
     ) -> None:
-        """Extract file paths and commands from content."""# Extract file paths
+        """Extract file paths and commands from content."""
+        # Extract file paths
         file_patterns = [
             r'(?:created?|modified?|updated?|edited?)\s+[`"]?([/\w.-]+\.\w+)[`"]?',
             r'(?:file|path):\s*[`"]?([/\w.-]+\.\w+)[`"]?',
@@ -616,7 +633,8 @@ class ConversationParser:
                     command_mentions.add(match.strip())
 
     def _extract_insights(self, content: str, doc: Doc, context: ConversationContext) -> None:
-        """Extract key insights from content."""# Look for key insights in various formats
+        """Extract key insights from content."""
+        # Look for key insights in various formats
         insight_patterns = [
             r"(?:the key|important|note|remember):\s*(.+?)(?:\.|$)",
             r"(?:this ensures|this creates|this allows|this enables)\s+(.+?)(?:\.|$)",
@@ -639,7 +657,8 @@ class ConversationParser:
                 context.key_insights.append(insight)
 
     def _extract_task_description(self, sent_text: str) -> Optional[str]:
-        """Extract a meaningful task description from text."""# Normalize the text
+        """Extract a meaningful task description from text."""
+        # Normalize the text
         sent_lower = sent_text.lower().strip()
 
         # High-level task patterns
@@ -724,7 +743,8 @@ class ConversationParser:
         return None
 
     def _extract_decision_from_sentence(self, sent: Span) -> Optional[str]:
-        """Extract decision description from a sentence."""sent_text = sent.text.strip()
+        """Extract decision description from a sentence."""
+        sent_text = sent.text.strip()
         sent_lower = sent_text.lower()
 
         # Look for clear decision patterns
@@ -754,7 +774,8 @@ class ConversationParser:
         return None
 
     def _extract_rationale(self, content: str, decision_text: str) -> str:
-        """Extract rationale for a decision from surrounding context."""# Look for rationale indicators before or after the decision
+        """Extract rationale for a decision from surrounding context."""
+        # Look for rationale indicators before or after the decision
         lines = content.split("\n")
         decision_line_idx = None
 
@@ -779,7 +800,8 @@ class ConversationParser:
         return rationale
 
     def _extract_implementation_reference(self, text: str) -> Optional[str]:
-        """Extract what was implemented from text."""# Remove implementation indicator
+        """Extract what was implemented from text."""
+        # Remove implementation indicator
         impl_text = text
         for indicator in self.implementation_indicators:
             impl_text = impl_text.replace(indicator, "").strip()
@@ -787,13 +809,15 @@ class ConversationParser:
         return impl_text if impl_text else None
 
     def _get_subtree_tokens(self, token: Token) -> List[Token]:
-        """Get all tokens in a subtree."""tokens = [token]
+        """Get all tokens in a subtree."""
+        tokens = [token]
         for child in token.children:
             tokens.extend(self._get_subtree_tokens(child))
         return tokens
 
     def _is_related(self, text1: str, text2: str) -> bool:
-        """Check if two texts are related using token overlap."""# Simple token overlap for now
+        """Check if two texts are related using token overlap."""
+        # Simple token overlap for now
         tokens1 = set(text1.lower().split())
         tokens2 = set(text2.lower().split())
 
@@ -840,7 +864,8 @@ class ConversationParser:
         return overlap / min_len > 0.3 if min_len > 0 else False
 
     def _is_strongly_related(self, text1: str, text2: str) -> bool:
-        """Check if two texts are strongly related (higher threshold)."""# Normalize
+        """Check if two texts are strongly related (higher threshold)."""
+        # Normalize
         text1_lower = text1.lower()
         text2_lower = text2.lower()
 
@@ -862,12 +887,14 @@ class ConversationParser:
         return False
 
     def _link_problems_solutions(self, context: ConversationContext) -> None:
-        """Link problems to their solutions across the conversation."""# This is already partially done during extraction
+        """Link problems to their solutions across the conversation."""
+        # This is already partially done during extraction
         # Here we can do additional linking based on semantic similarity
         pass
 
     def _deduplicate_tasks(self, context: ConversationContext) -> None:
-        """Remove duplicate tasks based on similarity."""unique_tasks = []
+        """Remove duplicate tasks based on similarity."""
+        unique_tasks = []
         seen_texts = set()
 
         for task in context.tasks:
@@ -880,7 +907,8 @@ class ConversationParser:
         context.tasks = unique_tasks
 
     def _filter_errors(self, context: ConversationContext) -> None:
-        """Filter out non-error items from errors_encountered."""real_errors = []
+        """Filter out non-error items from errors_encountered."""
+        real_errors = []
 
         for error in context.errors_encountered:
             error_lower = error.lower()
@@ -902,7 +930,8 @@ class ConversationParser:
         context.errors_encountered = real_errors
 
     def _calculate_confidence_scores(self, context: ConversationContext) -> None:
-        """Calculate confidence scores for extracted items."""# Simple heuristic-based confidence for now
+        """Calculate confidence scores for extracted items."""
+        # Simple heuristic-based confidence for now
         for task in context.tasks:
             # Higher confidence if implemented
             if task.implemented:
@@ -916,7 +945,8 @@ class ConversationParser:
             decision.confidence = 0.9 if decision.rationale else 0.7
 
     def to_json(self, context: ConversationContext) -> str:
-        """Convert extracted context to JSON format."""return json.dumps(
+        """Convert extracted context to JSON format."""
+        return json.dumps(
             {
                 "tasks": [
                     {

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Validates intervention messages against Dustin's voice style.
+"""
+Validates intervention messages against Dustin's voice style.
 
 This script ensures that CAKE's Operator component generates messages that match
 Dustin's intervention style with ≥90% similarity.
@@ -20,7 +21,9 @@ from typing import List
 
 @dataclass
 class VoiceCheckResult:
-    """Result of voice similarity check."""
+    """
+    Result of voice similarity check."""
+
     message: str
     score: float
     passed: bool
@@ -30,6 +33,7 @@ class VoiceCheckResult:
 
 class DustinVoiceValidator:
     """Validates messages against Dustin's intervention style."""
+
     # Dustin's approved action verbs
     APPROVED_VERBS = {"Run", "Check", "Fix", "Try", "See"}
 
@@ -41,7 +45,8 @@ class DustinVoiceValidator:
     MAX_MESSAGE_LENGTH = 150
 
     def __init__(self) -> None:
-        """Initialize validator with Dustin's voice patterns."""# Common patterns in Dustin's interventions
+        """Initialize validator with Dustin's voice patterns."""
+        # Common patterns in Dustin's interventions
         self.dustin_patterns = {
             "directness": [
                 "Run {command}",
@@ -71,7 +76,8 @@ class DustinVoiceValidator:
         }
 
     def check_message(self, message: str) -> VoiceCheckResult:
-        """Check if message matches Dustin's voice."""issues: List[str] = []
+        """Check if message matches Dustin's voice."""
+        issues: List[str] = []
         suggestions: List[str] = []
         score: float = 100.0
 
@@ -97,7 +103,8 @@ class DustinVoiceValidator:
     def _check_format_and_update_score(
         self, message: str, issues: List[str], score: float
     ) -> float:
-        """Check format and update score accordingly."""if not self._check_format(message):
+        """Check format and update score accordingly."""
+        if not self._check_format(message):
             issues.append(
                 "Invalid format. Must be: 'Operator (CAKE): Stop. {action}. {reference}.'"
             )
@@ -107,7 +114,8 @@ class DustinVoiceValidator:
     def _check_length_and_update_score(
         self, message: str, issues: List[str], score: float
     ) -> float:
-        """Check message length and update score."""if len(message) > self.MAX_MESSAGE_LENGTH:
+        """Check message length and update score."""
+        if len(message) > self.MAX_MESSAGE_LENGTH:
             issues.append(
                 f"Message too long ({len(message)} chars). Max: {self.MAX_MESSAGE_LENGTH}"
             )
@@ -117,38 +125,44 @@ class DustinVoiceValidator:
     def _check_sentences_and_update_score(
         self, message: str, issues: List[str], score: float
     ) -> float:
-        """Check sentence count and update score."""sentences = message.count(".")
+        """Check sentence count and update score."""
+        sentences = message.count(".")
         if sentences > self.MAX_SENTENCES:
             issues.append(f"Too many sentences ({sentences}). Max: {self.MAX_SENTENCES}")
             score -= 15
         return score
 
     def _check_verbs_and_update_score(self, message: str, issues: List[str], score: float) -> float:
-        """Check approved verbs and update score."""verb_score = self._check_verbs(message)
+        """Check approved verbs and update score."""
+        verb_score = self._check_verbs(message)
         if verb_score < 100:
             issues.append("Use only approved verbs: Run, Check, Fix, Try, See")
             score -= (100 - verb_score) * 0.2
         return score
 
     def _check_directness_and_update_score(self, message: str, score: float) -> float:
-        """Check directness and update score."""directness_score = self._check_directness(message)
+        """Check directness and update score."""
+        directness_score = self._check_directness(message)
         score -= (100 - directness_score) * 0.15
         return score
 
     def _check_avoided_words_and_update_score(
         self, message: str, issues: List[str], score: float
     ) -> float:
-        """Check for avoided words and update score."""avoided = self._check_avoided_words(message)
+        """Check for avoided words and update score."""
+        avoided = self._check_avoided_words(message)
         if avoided:
             issues.append(f"Remove polite/uncertain words: {', '.join(avoided)}")
             score -= len(avoided) * 5
         return score
 
     def _check_format(self, message: str) -> bool:
-        """Check if message matches expected format."""return bool(re.match(self.MESSAGE_PATTERN, message))
+        """Check if message matches expected format."""
+        return bool(re.match(self.MESSAGE_PATTERN, message))
 
     def _check_verbs(self, message: str) -> float:
-        """Check if message uses approved verbs."""# Extract the action part
+        """Check if message uses approved verbs."""
+        # Extract the action part
         match = re.match(self.MESSAGE_PATTERN, message)
         if not match:
             return 0
@@ -163,7 +177,8 @@ class DustinVoiceValidator:
         return 100 if words[0] in self.APPROVED_VERBS else 50
 
     def _check_directness(self, message: str) -> float:
-        """Check how direct and imperative the message is."""score = 100
+        """Check how direct and imperative the message is."""
+        score = 100
 
         # Penalize questions
         if "?" in message:
@@ -178,7 +193,8 @@ class DustinVoiceValidator:
         return max(0, score)
 
     def _check_avoided_words(self, message: str) -> List[str]:
-        """Find polite/uncertain words that should be avoided."""found = []
+        """Find polite/uncertain words that should be avoided."""
+        found = []
         message_lower = message.lower()
 
         for word in self.dustin_patterns["avoid_words"]:
@@ -188,7 +204,8 @@ class DustinVoiceValidator:
         return found
 
     def _generate_suggestions(self, message: str, issues: List[str]) -> List[str]:
-        """Generate suggestions to improve the message."""suggestions = []
+        """Generate suggestions to improve the message."""
+        suggestions = []
 
         # Try to extract intent and rebuild
         match = re.match(r".*?: (.+)", message)
@@ -209,7 +226,8 @@ class DustinVoiceValidator:
 
 
 def _create_parser() -> argparse.ArgumentParser:
-    """Create and configure argument parser."""parser = argparse.ArgumentParser(
+    """Create and configure argument parser."""
+    parser = argparse.ArgumentParser(
         description="Validate CAKE intervention messages against Dustin's voice",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -244,12 +262,14 @@ Voice Requirements:
 def _process_single_message(
     validator: DustinVoiceValidator, message: str
 ) -> List[VoiceCheckResult]:
-    """Process a single message and return results."""result = validator.check_message(message)
+    """Process a single message and return results."""
+    result = validator.check_message(message)
     return [result]
 
 
 def _process_file(validator: DustinVoiceValidator, file_path: Path) -> List[VoiceCheckResult]:
-    """Process messages from a file."""if not file_path.exists():
+    """Process messages from a file."""
+    if not file_path.exists():
         print(f"Error: File not found: {file_path}")
         return []
 
@@ -265,7 +285,8 @@ def _process_file(validator: DustinVoiceValidator, file_path: Path) -> List[Voic
 
 
 def _run_interactive_mode(validator: DustinVoiceValidator, verbose: bool) -> None:
-    """Run interactive validation mode."""print("CAKE Voice Validator - Interactive Mode")
+    """Run interactive validation mode."""
+    print("CAKE Voice Validator - Interactive Mode")
     print("Enter messages to check (Ctrl+C to exit)")
     print("-" * 40)
 
@@ -280,7 +301,8 @@ def _run_interactive_mode(validator: DustinVoiceValidator, verbose: bool) -> Non
 
 
 def _output_results(results: List[VoiceCheckResult], as_json: bool, verbose: bool) -> None:
-    """Output results in the requested format."""if not results:
+    """Output results in the requested format."""
+    if not results:
         return
 
     if as_json:
@@ -302,7 +324,8 @@ def _output_results(results: List[VoiceCheckResult], as_json: bool, verbose: boo
 
 
 def main() -> int:
-    """Main entry point."""parser = _create_parser()
+    """Main entry point."""
+    parser = _create_parser()
     args = parser.parse_args()
 
     # Validate arguments

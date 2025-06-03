@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Tests for CAKE adapters module.
+"""
+Tests for CAKE adapters module.
 
 Tests core functionality of the adapters that integrate CAKE with Claude.
 """
@@ -34,10 +35,12 @@ from cake.adapters.claude_orchestration import (
 
 
 class TestCAKEAdapter:
-    """Test the main CAKE adapter."""
+    """
+    Test the main CAKE adapter."""
     @pytest.fixture
     def mock_components(self):
-        """Create mock components for testing."""operator = Mock()
+        """Create mock components for testing."""
+        operator = Mock()
         operator.build_message.return_value = "Operator (CAKE): Stop. Fix the error. See docs."
 
         recall_db = Mock()
@@ -58,7 +61,8 @@ class TestCAKEAdapter:
         }
 
     def test_adapter_initialization(self, mock_components):
-        """Test adapter initializes correctly."""adapter = CAKEAdapter(**mock_components)
+        """Test adapter initializes correctly."""
+        adapter = CAKEAdapter(**mock_components)
 
         assert adapter.intervention_enabled is True
         assert adapter.auto_cleanup is True
@@ -66,7 +70,8 @@ class TestCAKEAdapter:
         assert len(adapter.conversation_history) == 0
 
     def test_check_repeat_error_new_error(self, mock_components):
-        """Test handling of new errors."""adapter = CAKEAdapter(**mock_components)
+        """Test handling of new errors."""
+        adapter = CAKEAdapter(**mock_components)
         error = {"message": "Module not found", "type": "ImportError"}
 
         result = adapter.check_repeat_error(error)
@@ -75,7 +80,8 @@ class TestCAKEAdapter:
         mock_components["recall_db"].record_error.assert_called_once()
 
     def test_check_repeat_error_repeated(self, mock_components):
-        """Test handling of repeated errors."""mock_components["recall_db"].is_repeat_error.return_value = True
+        """Test handling of repeated errors."""
+        mock_components["recall_db"].is_repeat_error.return_value = True
         adapter = CAKEAdapter(**mock_components)
         error = {"message": "Module not found", "type": "ImportError"}
 
@@ -86,7 +92,8 @@ class TestCAKEAdapter:
         mock_components["operator"].build_message.assert_called_once()
 
     def test_update_ci_status_failure(self, mock_components):
-        """Test CI status update with failures."""adapter = CAKEAdapter(**mock_components)
+        """Test CI status update with failures."""
+        adapter = CAKEAdapter(**mock_components)
         status = {
             "status": "failure",
             "failing_tests": ["test_foo", "test_bar"],
@@ -98,7 +105,8 @@ class TestCAKEAdapter:
         assert adapter.current_state.ci_status == status
 
     def test_detect_feature_creep(self, mock_components):
-        """Test feature creep detection."""adapter = CAKEAdapter(**mock_components)
+        """Test feature creep detection."""
+        adapter = CAKEAdapter(**mock_components)
 
         # No feature creep
         changes = {"new_files": ["test.py"], "new_functions": ["func1", "func2"]}
@@ -113,7 +121,8 @@ class TestCAKEAdapter:
 
     @pytest.mark.asyncio
     async def test_process_claude_action(self, mock_components):
-        """Test processing Claude actions."""adapter = CAKEAdapter(**mock_components)
+        """Test processing Claude actions."""
+        adapter = CAKEAdapter(**mock_components)
         action = {
             "type": "command",
             "command": "pip install requests",
@@ -127,7 +136,8 @@ class TestCAKEAdapter:
 
     @pytest.mark.asyncio
     async def test_validate_task_convergence(self, mock_components):
-        """Test task convergence validation."""adapter = CAKEAdapter(**mock_components)
+        """Test task convergence validation."""
+        adapter = CAKEAdapter(**mock_components)
         stage_outputs = {"think": "analyzed", "execute": "completed"}
         artifacts = ["main.py", "test_main.py"]
 
@@ -141,9 +151,10 @@ class TestCAKEIntegration:
     """Test the CAKE integration layer."""
     @pytest.fixture
     def integration(self):
-        """Create integration instance for testing."""with patch("cake.adapters.cake_integration.create_cake_system") as mock_create:
+        """
+                                       Create integration instance for testing."""
+        with patch("cake.adapters.cake_integration.create_cake_system") as mock_create:
             mock_adapter = Mock()
-            mock_create.return_value = mock_adapter
 
             integration = CAKEIntegration(Path("/tmp/test_cake"))
             integration.adapter = mock_adapter
@@ -152,7 +163,8 @@ class TestCAKEIntegration:
 
     @pytest.mark.asyncio
     async def test_start_task(self, integration):
-        """Test starting a new task."""task_desc = "Fix the import error"
+        """Test starting a new task."""
+        task_desc = "Fix the import error"
         constitution = {"domain": "python", "min_coverage": 90}
 
         task_id = await integration.start_task(task_desc, constitution)
@@ -162,7 +174,8 @@ class TestCAKEIntegration:
 
     @pytest.mark.asyncio
     async def test_process_stage(self, integration):
-        """Test processing a TRRDEVS stage."""integration.adapter.process_claude_action = AsyncMock(return_value=None)
+        """Test processing a TRRDEVS stage."""
+        integration.adapter.process_claude_action = AsyncMock(return_value=None)
 
         result = await integration.process_stage("think", {"task": "analyze"})
 
@@ -170,7 +183,8 @@ class TestCAKEIntegration:
         assert result["stage"] == "think"
 
     def test_classify_task_type(self, integration):
-        """Test task type classification."""assert integration._classify_task_type("Fix the bug in parser") == "bug_fix"
+        """Test task type classification."""
+        assert integration._classify_task_type("Fix the bug in parser") == "bug_fix"
         assert integration._classify_task_type("Add new feature for export") == "feature"
         assert integration._classify_task_type("Refactor the database layer") == "refactor"
         assert integration._classify_task_type("Write tests for API") == "testing"
@@ -181,8 +195,9 @@ class TestPromptOrchestration:
     """Test the prompt orchestration system."""
     @pytest.fixture
     def orchestrator(self):
-        """Create orchestrator for testing."""mock_client = Mock()
-        mock_client.chat = AsyncMock()
+        """
+                                            Create orchestrator for testing."""
+        mock_client = Mock()
         mock_client.chat.return_value = Mock(content="Test response")
 
         orchestrator = PromptOrchestrator(
@@ -193,7 +208,8 @@ class TestPromptOrchestration:
         return orchestrator
 
     def test_template_creation(self):
-        """Test prompt template creation."""template = PromptTemplate(
+        """Test prompt template creation."""
+        template = PromptTemplate(
             template_id="test_template",
             prompt_type=PromptType.ERROR_ANALYSIS,
             template_text="Analyze this error: $error_message",
@@ -204,7 +220,8 @@ class TestPromptOrchestration:
         assert "error_message" in template.required_variables
 
     def test_template_rendering(self):
-        """Test template variable substitution."""template = PromptTemplate(
+        """Test template variable substitution."""
+        template = PromptTemplate(
             template_id="test",
             prompt_type=PromptType.ERROR_ANALYSIS,
             template_text="Error: $error_message in $file",
@@ -222,7 +239,8 @@ class TestPromptOrchestration:
 
     @pytest.mark.asyncio
     async def test_execute_prompt(self, orchestrator):
-        """Test prompt execution."""context = PromptContext(
+        """Test prompt execution."""
+        context = PromptContext(
             stage="execute",
             task_description="Fix import error",
             error_context={"error": "ImportError: No module named 'requests'"},
@@ -238,11 +256,12 @@ class TestPromptOrchestration:
         assert execution.token_usage["total_tokens"] > 0
 
     def test_response_analyzer(self):
-        """Test response quality analysis."""analyzer = ResponseAnalyzer()
+        """Test response quality analysis."""
+        analyzer = ResponseAnalyzer()
 
         response = """
-        The error occurs because the 'requests' module is not installed.
-        
+            The error occurs because the 'requests' module is not installed.
+The error occurs because the 'requests' module is not installed.
         **Solution**:
         Run the following command:
         ```bash
@@ -263,7 +282,8 @@ class TestPromptOrchestration:
         assert "code_blocks" in analysis["extracted_data"]
 
     def test_context_enhancer(self):
-        """Test context enhancement."""enhancer = ContextEnhancer()
+        """Test context enhancement."""
+        enhancer = ContextEnhancer()
         context = PromptContext(
             stage="execute",
             task_description="Fix the bug",
@@ -283,7 +303,8 @@ class TestPromptOrchestration:
 class TestCreateCakeSystem:
     """Test the CAKE system factory."""
     def test_create_cake_system(self):
-        """Test creating a complete CAKE system."""
+        """
+                                    Test creating a complete CAKE system."""
         with patch("cake.adapters.cake_adapter.OperatorBuilder"), patch(
             "cake.adapters.cake_adapter.RecallDB"
         ), patch("cake.adapters.cake_adapter.CrossTaskKnowledgeLedger"), patch(
