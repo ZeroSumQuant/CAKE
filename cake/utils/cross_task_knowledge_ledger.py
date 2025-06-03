@@ -225,9 +225,7 @@ class KnowledgeExtractor:
 
         if task.final_status == "success" and len(task.stage_sequence) > 3:
             # Identify successful strategy sequences
-            strategy_sequence = [
-                s["action"] for s in task.strategies_used if "action" in s
-            ]
+            strategy_sequence = [s["action"] for s in task.strategies_used if "action" in s]
 
             if len(strategy_sequence) >= 3:
                 # Extract patterns of length 3-5
@@ -251,9 +249,7 @@ class KnowledgeExtractor:
                                 ),
                                 "success_context": {
                                     "domain": task.domain,
-                                    "task_type": self._categorize_task(
-                                        task.description
-                                    ),
+                                    "task_type": self._categorize_task(task.description),
                                     "complexity": self._estimate_complexity(task),
                                 },
                             },
@@ -261,13 +257,9 @@ class KnowledgeExtractor:
                             success_metrics={
                                 "task_success_rate": 1.0,
                                 "efficiency_score": self._calculate_efficiency(task),
-                                "quality_score": task.quality_metrics.get(
-                                    "overall_score", 0.8
-                                ),
+                                "quality_score": task.quality_metrics.get("overall_score", 0.8),
                             },
-                            confidence_score=self._calculate_pattern_confidence(
-                                task, pattern
-                            ),
+                            confidence_score=self._calculate_pattern_confidence(task, pattern),
                             source_tasks={task.task_id},
                             domain_applicability={task.domain},
                         )
@@ -293,14 +285,10 @@ class KnowledgeExtractor:
                         knowledge_id=knowledge_id,
                         knowledge_type=KnowledgeType.SOLUTION_TEMPLATE,
                         content=template,
-                        context_tags=self._generate_context_tags(
-                            task, [template["template_type"]]
-                        ),
+                        context_tags=self._generate_context_tags(task, [template["template_type"]]),
                         success_metrics={
                             "reusability_score": template.get("reusability_score", 0.7),
-                            "quality_score": task.quality_metrics.get(
-                                "code_quality", 0.8
-                            ),
+                            "quality_score": task.quality_metrics.get("code_quality", 0.8),
                         },
                         confidence_score=0.8,
                         source_tasks={task.task_id},
@@ -375,9 +363,7 @@ class KnowledgeExtractor:
                     knowledge_type=KnowledgeType.DOMAIN_HEURISTIC,
                     content=heuristic,
                     context_tags=self._generate_context_tags(task, [task.domain]),
-                    success_metrics={
-                        "applicability_score": heuristic.get("confidence", 0.7)
-                    },
+                    success_metrics={"applicability_score": heuristic.get("confidence", 0.7)},
                     confidence_score=heuristic.get("confidence", 0.7),
                     source_tasks={task.task_id},
                     domain_applicability={task.domain},
@@ -430,17 +416,15 @@ class KnowledgeExtractor:
 
         for error in task.errors_encountered:
             for solution in task.solutions_applied:
-                if error.get("timestamp", 0) < solution.get(
-                    "timestamp", 0
-                ) and solution.get("success", False):
+                if error.get("timestamp", 0) < solution.get("timestamp", 0) and solution.get(
+                    "success", False
+                ):
 
                     resolution = {
                         "error_pattern": {
                             "type": error.get("error_type"),
                             "stage": error.get("stage"),
-                            "signature": self._extract_error_signature(
-                                error.get("message", "")
-                            ),
+                            "signature": self._extract_error_signature(error.get("message", "")),
                         },
                         "solution": {
                             "approach": solution.get("approach"),
@@ -467,9 +451,7 @@ class KnowledgeExtractor:
                             task, [resolution["error_pattern"]["type"]]
                         ),
                         success_metrics={
-                            "resolution_success_rate": solution.get(
-                                "effectiveness", 0.8
-                            )
+                            "resolution_success_rate": solution.get("effectiveness", 0.8)
                         },
                         confidence_score=solution.get("effectiveness", 0.8),
                         source_tasks={task.task_id},
@@ -490,9 +472,7 @@ class KnowledgeExtractor:
                 "techniques_used": self._identify_optimization_techniques(task),
                 "improvement_metrics": {
                     "factor": task.performance_metrics.get("improvement_factor", 1.0),
-                    "baseline": task.performance_metrics.get(
-                        "baseline_performance", {}
-                    ),
+                    "baseline": task.performance_metrics.get("baseline_performance", {}),
                     "optimized": task.performance_metrics.get("final_performance", {}),
                 },
                 "context": {
@@ -509,9 +489,7 @@ class KnowledgeExtractor:
                 knowledge_id=knowledge_id,
                 knowledge_type=KnowledgeType.OPTIMIZATION_RULE,
                 content=optimization,
-                context_tags=self._generate_context_tags(
-                    task, ["optimization", "performance"]
-                ),
+                context_tags=self._generate_context_tags(task, ["optimization", "performance"]),
                 success_metrics={
                     "improvement_factor": optimization["improvement_metrics"]["factor"]
                 },
@@ -538,30 +516,20 @@ class KnowledgeExtractor:
             # Extract quality thresholds that led to success
             for metric, value in task.quality_metrics.items():
                 if value > 0.7:  # Only include high-quality metrics
-                    quality_gate["minimum_requirements"][metric] = (
-                        value * 0.8
-                    )  # 80% of achieved
+                    quality_gate["minimum_requirements"][metric] = value * 0.8  # 80% of achieved
                     quality_gate["recommended_targets"][metric] = value
 
             # Add validation methods used
-            quality_gate["validation_methods"] = task.metadata.get(
-                "validation_methods", []
-            )
+            quality_gate["validation_methods"] = task.metadata.get("validation_methods", [])
 
-            knowledge_id = self._generate_knowledge_id(
-                "quality_gate", f"{task.domain}_standards"
-            )
+            knowledge_id = self._generate_knowledge_id("quality_gate", f"{task.domain}_standards")
 
             entry = KnowledgeEntry(
                 knowledge_id=knowledge_id,
                 knowledge_type=KnowledgeType.QUALITY_GATE,
                 content=quality_gate,
-                context_tags=self._generate_context_tags(
-                    task, ["quality", task.domain]
-                ),
-                success_metrics={
-                    "quality_score": statistics.mean(task.quality_metrics.values())
-                },
+                context_tags=self._generate_context_tags(task, ["quality", task.domain]),
+                success_metrics={"quality_score": statistics.mean(task.quality_metrics.values())},
                 confidence_score=0.8,
                 source_tasks={task.task_id},
                 domain_applicability={task.domain},
@@ -571,16 +539,12 @@ class KnowledgeExtractor:
         return entries
 
     # Helper methods for extraction
-    def _generate_knowledge_id(
-        self, knowledge_type: str, content_signature: str
-    ) -> str:
+    def _generate_knowledge_id(self, knowledge_type: str, content_signature: str) -> str:
         """Generate unique knowledge ID."""
         signature = f"{knowledge_type}_{content_signature}"
         return hashlib.md5(signature.encode()).hexdigest()[:16]
 
-    def _generate_context_tags(
-        self, task: TaskSummary, additional_tags: List[str]
-    ) -> Set[str]:
+    def _generate_context_tags(self, task: TaskSummary, additional_tags: List[str]) -> Set[str]:
         """Generate context tags for knowledge entry."""
         tags = {
             task.domain,
@@ -631,10 +595,7 @@ class KnowledgeExtractor:
         base_score = 1.0
 
         # Penalize for high cost
-        if (
-            task.cost_metrics.get("total_cost", 0)
-            > task.cost_metrics.get("budget", 1) * 0.8
-        ):
+        if task.cost_metrics.get("total_cost", 0) > task.cost_metrics.get("budget", 1) * 0.8:
             base_score *= 0.8
 
         # Penalize for many retries
@@ -648,9 +609,7 @@ class KnowledgeExtractor:
 
         return min(1.0, base_score)
 
-    def _calculate_pattern_confidence(
-        self, task: TaskSummary, pattern: List[str]
-    ) -> float:
+    def _calculate_pattern_confidence(self, task: TaskSummary, pattern: List[str]) -> float:
         """Calculate confidence in a strategy pattern."""
         base_confidence = 0.7
 
@@ -710,10 +669,7 @@ class KnowledgeExtractor:
         important_lines = [
             line
             for line in lines
-            if any(
-                keyword in line.lower()
-                for keyword in ["def ", "class ", "import ", "@"]
-            )
+            if any(keyword in line.lower() for keyword in ["def ", "class ", "import ", "@"])
         ]
         return "\n".join(important_lines[:10])  # First 10 important lines
 
@@ -734,9 +690,7 @@ class KnowledgeExtractor:
             base_score += 0.1
 
         # Penalty for hardcoded values
-        if any(
-            hardcode in artifact for hardcode in ["localhost", "127.0.0.1", "/tmp/"]
-        ):
+        if any(hardcode in artifact for hardcode in ["localhost", "127.0.0.1", "/tmp/"]):
             base_score -= 0.1
 
         return min(1.0, max(0.2, base_score))
@@ -747,17 +701,13 @@ class KnowledgeExtractor:
 
         # Extract imports
         import_lines = [
-            line.strip()
-            for line in artifact.split("\n")
-            if line.strip().startswith("import ")
+            line.strip() for line in artifact.split("\n") if line.strip().startswith("import ")
         ]
         requirements.extend(import_lines)
 
         # Extract from comments
         comment_lines = [
-            line.strip()
-            for line in artifact.split("\n")
-            if line.strip().startswith("#")
+            line.strip() for line in artifact.split("\n") if line.strip().startswith("#")
         ]
         requirements.extend(comment_lines[:3])  # First 3 comments
 
@@ -953,9 +903,7 @@ class KnowledgeRetriever:
 
         if knowledge_types:
             type_names = [kt.name for kt in knowledge_types]
-            conditions.append(
-                f"knowledge_type IN ({','.join(['?' for _ in type_names])})"
-            )
+            conditions.append(f"knowledge_type IN ({','.join(['?' for _ in type_names])})")
             params.extend(type_names)
 
         # Query database
@@ -986,9 +934,7 @@ class KnowledgeRetriever:
         scored_entries.sort(key=lambda x: x[1], reverse=True)
         return [entry for entry, _ in scored_entries[:max_results]]
 
-    def _calculate_relevance(
-        self, entry: KnowledgeEntry, context: Dict[str, Any]
-    ) -> float:
+    def _calculate_relevance(self, entry: KnowledgeEntry, context: Dict[str, Any]) -> float:
         """Calculate relevance score between knowledge entry and current context."""
         relevance = 0.0
 
@@ -999,18 +945,13 @@ class KnowledgeRetriever:
 
         # Context tag overlap
         current_tags = self._extract_context_tags(context)
-        tag_overlap = len(entry.context_tags & current_tags) / max(
-            len(entry.context_tags), 1
-        )
+        tag_overlap = len(entry.context_tags & current_tags) / max(len(entry.context_tags), 1)
         relevance += tag_overlap * 0.3
 
         # Stage match (for strategy patterns)
         current_stage = context.get("stage", "")
         if entry.knowledge_type == KnowledgeType.STRATEGY_PATTERN:
-            if (
-                "stage_context" in entry.content
-                and current_stage in entry.content["stage_context"]
-            ):
+            if "stage_context" in entry.content and current_stage in entry.content["stage_context"]:
                 relevance += 0.2
 
         # Error type match (for error resolutions)
@@ -1122,9 +1063,7 @@ class KnowledgeRetriever:
             success_metrics=json.loads(success_metrics_json),
             confidence_score=confidence_score,
             usage_count=usage_count,
-            last_success=(
-                datetime.fromisoformat(last_success_str) if last_success_str else None
-            ),
+            last_success=(datetime.fromisoformat(last_success_str) if last_success_str else None),
             source_tasks=set(json.loads(source_tasks_json)),
             domain_applicability=set(json.loads(domain_applicability_json)),
             prerequisites=json.loads(prerequisites_json),
@@ -1202,9 +1141,7 @@ class CrossTaskKnowledgeLedger:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_confidence ON knowledge_entries(confidence_score)"
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_usage ON knowledge_entries(usage_count)"
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_usage ON knowledge_entries(usage_count)")
 
         # Create task summaries table
         conn.execute(
@@ -1289,9 +1226,7 @@ class CrossTaskKnowledgeLedger:
                 "confidence": entry.confidence_score,
                 "usage_count": entry.usage_count,
                 "applicability": self._assess_applicability(entry, current_context),
-                "application_guidance": self._generate_application_guidance(
-                    entry, current_context
-                ),
+                "application_guidance": self._generate_application_guidance(entry, current_context),
                 "prerequisites_met": self._check_prerequisites(entry, current_context),
                 "source_info": {
                     "source_tasks": list(entry.source_tasks),
@@ -1381,9 +1316,9 @@ class CrossTaskKnowledgeLedger:
             current_usage, current_confidence = existing
 
             # Merge confidence (weighted average)
-            new_confidence = (
-                current_confidence * current_usage + entry.confidence_score
-            ) / (current_usage + 1)
+            new_confidence = (current_confidence * current_usage + entry.confidence_score) / (
+                current_usage + 1
+            )
 
             self.database.execute(
                 """
@@ -1396,9 +1331,7 @@ class CrossTaskKnowledgeLedger:
             """,
                 (
                     new_confidence,
-                    json.dumps(
-                        list(entry.source_tasks | {existing[0] for existing in []})
-                    ),
+                    json.dumps(list(entry.source_tasks | {existing[0] for existing in []})),
                     datetime.now().isoformat(),
                     entry.knowledge_id,
                 ),
@@ -1435,15 +1368,11 @@ class CrossTaskKnowledgeLedger:
 
         self.database.commit()
 
-    def _assess_applicability(
-        self, entry: KnowledgeEntry, context: Dict[str, Any]
-    ) -> float:
+    def _assess_applicability(self, entry: KnowledgeEntry, context: Dict[str, Any]) -> float:
         """Assess how applicable knowledge is to current context."""  # This is handled by the retriever's relevance calculation
         return self.retriever._calculate_relevance(entry, context)
 
-    def _generate_application_guidance(
-        self, entry: KnowledgeEntry, context: Dict[str, Any]
-    ) -> str:
+    def _generate_application_guidance(self, entry: KnowledgeEntry, context: Dict[str, Any]) -> str:
         """Generate guidance on how to apply this knowledge."""
         guidance_templates = {
             KnowledgeType.STRATEGY_PATTERN: "Apply this strategy sequence: {pattern}",
@@ -1456,18 +1385,14 @@ class CrossTaskKnowledgeLedger:
             KnowledgeType.QUALITY_GATE: "Ensure quality standards: {requirements}",
         }
 
-        template = guidance_templates.get(
-            entry.knowledge_type, "Apply this knowledge: {content}"
-        )
+        template = guidance_templates.get(entry.knowledge_type, "Apply this knowledge: {content}")
 
         try:
             return template.format(**entry.content)
         except KeyError:
             return f"Apply this {entry.knowledge_type.name.lower().replace('_', ' ')}"
 
-    def _check_prerequisites(
-        self, entry: KnowledgeEntry, context: Dict[str, Any]
-    ) -> bool:
+    def _check_prerequisites(self, entry: KnowledgeEntry, context: Dict[str, Any]) -> bool:
         """Check if prerequisites for applying this knowledge are met."""
         if not entry.prerequisites:
             return True
@@ -1533,9 +1458,7 @@ class CrossTaskKnowledgeLedger:
             self.stats["knowledge_by_type"][knowledge_type] = count
 
         # Count by domain
-        cursor = self.database.execute(
-            "SELECT domain_applicability FROM knowledge_entries"
-        )
+        cursor = self.database.execute("SELECT domain_applicability FROM knowledge_entries")
         for (domain_json,) in cursor.fetchall():
             domains = json.loads(domain_json)
             for domain in domains:
@@ -1559,9 +1482,7 @@ class CrossTaskKnowledgeLedger:
 
     def _calculate_average_confidence(self) -> float:
         """Calculate average confidence across all knowledge."""
-        cursor = self.database.execute(
-            "SELECT AVG(confidence_score) FROM knowledge_entries"
-        )
+        cursor = self.database.execute("SELECT AVG(confidence_score) FROM knowledge_entries")
         result = cursor.fetchone()[0]
         return result if result else 0.0
 
@@ -1743,9 +1664,7 @@ def login(credentials):
 
         print(f"\nRetrieving knowledge for context: {current_context}")
 
-        relevant_knowledge = ledger.get_relevant_knowledge(
-            current_context, max_results=3
-        )
+        relevant_knowledge = ledger.get_relevant_knowledge(current_context, max_results=3)
 
         print(f"\nFound {len(relevant_knowledge)} relevant knowledge entries:")
         for i, knowledge in enumerate(relevant_knowledge, 1):
@@ -1759,9 +1678,7 @@ def login(credentials):
         # Test knowledge application recording
         if relevant_knowledge:
             first_knowledge = relevant_knowledge[0]
-            knowledge_id = first_knowledge["content"].get(
-                "knowledge_id", "test_knowledge"
-            )
+            knowledge_id = first_knowledge["content"].get("knowledge_id", "test_knowledge")
 
             ledger.record_knowledge_application(
                 knowledge_id="strategy_pattern_"

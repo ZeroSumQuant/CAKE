@@ -93,9 +93,7 @@ class Watchdog:
         self.callbacks.append(callback)
         logger.debug("Registered callback: %s", callback.__name__)
 
-    def monitor_stream(
-        self, stream: IO, callback: Callable[[ErrorEvent], None]
-    ) -> None:
+    def monitor_stream(self, stream: IO, callback: Callable[[ErrorEvent], None]) -> None:
         """
         Monitor stream and trigger callback on patterns.
 
@@ -155,9 +153,7 @@ class Watchdog:
                                     logger.error("Registered callback error: %s", e)
 
                             # Log the detection
-                            logger.info(
-                                "Detected %s: %s", error_type, line.strip()[:100]
-                            )
+                            logger.info("Detected %s: %s", error_type, line.strip()[:100])
 
                             # Check for coverage drop
                             if error_type == "CoverageDrop":
@@ -200,9 +196,7 @@ class Watchdog:
 
         # Default callback that logs events
         def default_callback(event: ErrorEvent):
-            logger.info(
-                "Error detected: %s in %s", event.error_type, event.stream_source
-            )
+            logger.info("Error detected: %s in %s", event.error_type, event.stream_source)
 
         if stdout:
             self.monitor_stream(stdout, callback or default_callback)

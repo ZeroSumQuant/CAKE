@@ -139,9 +139,7 @@ class VoiceSimilarityGate:
 
         # Fit vectorizer on reference corpus
         self.reference_vectors = self.vectorizer.fit_transform(self.reference_messages)
-        logger.info(
-            "Loaded %d default reference messages", len(self.reference_messages)
-        )
+        logger.info("Loaded %d default reference messages", len(self.reference_messages))
 
     def load_reference_corpus(self, path: str) -> None:
         """
@@ -174,9 +172,7 @@ class VoiceSimilarityGate:
 
             # Update reference corpus
             self.reference_messages = messages
-            self.reference_vectors = self.vectorizer.fit_transform(
-                self.reference_messages
-            )
+            self.reference_vectors = self.vectorizer.fit_transform(self.reference_messages)
 
             logger.info("Loaded %d reference messages from %s", len(messages), path)
 
@@ -338,9 +334,7 @@ class VoiceSimilarityGate:
         self.reference_messages.append(message)
         # Refit vectorizer
         self.reference_vectors = self.vectorizer.fit_transform(self.reference_messages)
-        logger.info(
-            "Added new reference message, corpus size: %d", len(self.reference_messages)
-        )
+        logger.info("Added new reference message, corpus size: %d", len(self.reference_messages))
 
 
 # Example usage

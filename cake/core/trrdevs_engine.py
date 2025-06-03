@@ -81,9 +81,7 @@ class TRRDEVSEngine:
         self.stage_handlers[stage] = handler
         logger.info(f"Registered handler for {stage.value}")
 
-    async def execute_stage(
-        self, stage: TRRDEVSStage, context: Dict[str, Any]
-    ) -> StageResult:
+    async def execute_stage(self, stage: TRRDEVSStage, context: Dict[str, Any]) -> StageResult:
         """
         Execute a single TRRDEVS stage.
 
@@ -249,9 +247,7 @@ if __name__ == "__main__":
 
         # Show stage history
         for stage_result in engine.get_stage_history():
-            print(
-                f"- {stage_result['stage']}: {'✓' if stage_result['success'] else '✗'}"
-            )
+            print(f"- {stage_result['stage']}: {'✓' if stage_result['success'] else '✗'}")
 
     # Run example
     asyncio.run(main())

@@ -305,9 +305,7 @@ class RecallDB:
             for row in cursor:
                 record_data = dict(row)
                 record_data["context"] = json.loads(record_data["context"])
-                record_data["timestamp"] = datetime.fromisoformat(
-                    record_data["timestamp"]
-                )
+                record_data["timestamp"] = datetime.fromisoformat(record_data["timestamp"])
                 results.append(record_data)
 
             return results
@@ -407,9 +405,7 @@ class RecallDB:
             for row in cursor:
                 violation_data = dict(row)
                 violation_data["details"] = json.loads(violation_data["details"])
-                violation_data["timestamp"] = datetime.fromisoformat(
-                    violation_data["timestamp"]
-                )
+                violation_data["timestamp"] = datetime.fromisoformat(violation_data["timestamp"])
                 results.append(violation_data)
 
             return results
@@ -501,15 +497,11 @@ class RecallDB:
             error_count = cursor.rowcount
 
             # Clean pattern violations
-            cursor = conn.execute(
-                "DELETE FROM pattern_violations WHERE expiry < ?", (now,)
-            )
+            cursor = conn.execute("DELETE FROM pattern_violations WHERE expiry < ?", (now,))
             pattern_count = cursor.rowcount
 
             # Clean command history
-            cursor = conn.execute(
-                "DELETE FROM command_history WHERE expiry < ?", (now,)
-            )
+            cursor = conn.execute("DELETE FROM command_history WHERE expiry < ?", (now,))
             command_count = cursor.rowcount
 
             conn.commit()
@@ -553,8 +545,7 @@ class RecallDB:
             )
 
             common_errors = [
-                {"error_type": row["error_type"], "count": row["count"]}
-                for row in cursor
+                {"error_type": row["error_type"], "count": row["count"]} for row in cursor
             ]
 
             # Get most violated patterns
@@ -570,8 +561,7 @@ class RecallDB:
             )
 
             common_patterns = [
-                {"pattern_name": row["pattern_name"], "count": row["count"]}
-                for row in cursor
+                {"pattern_name": row["pattern_name"], "count": row["count"]} for row in cursor
             ]
 
             return {
@@ -646,9 +636,7 @@ class RecallAnalyzer:
                         "file_path": row["file_path"],
                         "repeat_count": row["repeat_count"],
                         "fixes_tried": (
-                            row["fixes_tried"].split(" | ")
-                            if row["fixes_tried"]
-                            else []
+                            row["fixes_tried"].split(" | ") if row["fixes_tried"] else []
                         ),
                     }
                 )

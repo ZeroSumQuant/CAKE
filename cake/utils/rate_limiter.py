@@ -117,21 +117,11 @@ class RateLimiter:
                     "eval": lambda self, *args, **kwargs: asyncio.coroutine(
                         lambda: [1, 10]
                     )(),  # Always allow with 10 tokens
-                    "hgetall": lambda self, *args, **kwargs: asyncio.coroutine(
-                        lambda: {}
-                    )(),
-                    "delete": lambda self, *args, **kwargs: asyncio.coroutine(
-                        lambda: None
-                    )(),
-                    "hincrby": lambda self, *args, **kwargs: asyncio.coroutine(
-                        lambda: 1
-                    )(),
-                    "hincrbyfloat": lambda self, *args, **kwargs: asyncio.coroutine(
-                        lambda: 1.0
-                    )(),
-                    "expire": lambda self, *args, **kwargs: asyncio.coroutine(
-                        lambda: True
-                    )(),
+                    "hgetall": lambda self, *args, **kwargs: asyncio.coroutine(lambda: {})(),
+                    "delete": lambda self, *args, **kwargs: asyncio.coroutine(lambda: None)(),
+                    "hincrby": lambda self, *args, **kwargs: asyncio.coroutine(lambda: 1)(),
+                    "hincrbyfloat": lambda self, *args, **kwargs: asyncio.coroutine(lambda: 1.0)(),
+                    "expire": lambda self, *args, **kwargs: asyncio.coroutine(lambda: True)(),
                     "RedisError": Exception,
                 },
             )()
@@ -203,12 +193,8 @@ class RateLimiter:
             allowed, remaining_or_retry = result
 
             if allowed == 1:
-                self.rate_limit_checks.labels(
-                    identifier=identifier, result="allowed"
-                ).inc()
-                self.rate_limit_tokens.labels(identifier=identifier).set(
-                    remaining_or_retry
-                )
+                self.rate_limit_checks.labels(identifier=identifier, result="allowed").inc()
+                self.rate_limit_tokens.labels(identifier=identifier).set(remaining_or_retry)
 
                 logger.debug(
                     "Rate limit check passed",
@@ -216,9 +202,7 @@ class RateLimiter:
                     remaining_tokens=remaining_or_retry,
                 )
             else:
-                self.rate_limit_checks.labels(
-                    identifier=identifier, result="exceeded"
-                ).inc()
+                self.rate_limit_checks.labels(identifier=identifier, result="exceeded").inc()
 
                 logger.warning(
                     "Rate limit exceeded",
@@ -324,9 +308,7 @@ def setup_telemetry(service_name: str, jaeger_endpoint: Optional[str] = None):
 
     # Setup metrics
     prometheus_reader = PrometheusMetricReader()
-    metric_provider = MeterProvider(
-        resource=resource, metric_readers=[prometheus_reader]
-    )
+    metric_provider = MeterProvider(resource=resource, metric_readers=[prometheus_reader])
     metrics.set_meter_provider(metric_provider)
     _meter = metrics.get_meter(__name__)
 

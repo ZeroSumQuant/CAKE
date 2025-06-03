@@ -128,16 +128,12 @@ class StageRouter:
         self.current_stage: Optional[str] = None
 
         # Performance tracking
-        self.stage_timings: Dict[str, List[float]] = {
-            stage: [] for stage in self.stages
-        }
+        self.stage_timings: Dict[str, List[float]] = {stage: [] for stage in self.stages}
         self.transition_counts: Dict[Tuple[str, str], int] = {}
 
         logger.info(f"StageRouter initialized with {len(self.stages)} stages")
 
-    def _build_stage_graph(
-        self, custom_transitions: Optional[Dict] = None
-    ) -> nx.DiGraph:
+    def _build_stage_graph(self, custom_transitions: Optional[Dict] = None) -> nx.DiGraph:
         """
         Build directed graph of valid stage transitions.
 
@@ -255,9 +251,7 @@ class StageRouter:
         # Validate transition is allowed
         if next_stage and current != next_stage:
             if not self._is_valid_transition(current, next_stage):
-                logger.warning(
-                    f"Invalid transition {current} -> {next_stage}, finding alternative"
-                )
+                logger.warning(f"Invalid transition {current} -> {next_stage}, finding alternative")
                 next_stage = self._find_alternative_route(current, next_stage)
 
         # Record transition
@@ -361,9 +355,7 @@ class StageRouter:
         except ValueError:
             return False
 
-    def suggest_optimal_path(
-        self, current: str, constraints: Dict[str, any] = None
-    ) -> List[str]:
+    def suggest_optimal_path(self, current: str, constraints: Dict[str, any] = None) -> List[str]:
         """
         Suggest optimal path to completion given constraints.
 
@@ -407,14 +399,11 @@ class StageRouter:
 
         analysis = {
             "total_transitions": len(self.history),
-            "unique_transitions": len(
-                set((t.from_stage, t.to_stage) for t in self.history)
-            ),
+            "unique_transitions": len(set((t.from_stage, t.to_stage) for t in self.history)),
             "backward_transitions": sum(
                 1
                 for t in self.history
-                if t.to_stage
-                and self.stages.index(t.to_stage) < self.stages.index(t.from_stage)
+                if t.to_stage and self.stages.index(t.to_stage) < self.stages.index(t.from_stage)
             ),
             "retry_count": sum(1 for t in self.history if t.from_stage == t.to_stage),
             "most_common_transitions": self._get_most_common_transitions(),
@@ -424,9 +413,7 @@ class StageRouter:
 
         return analysis
 
-    def _get_most_common_transitions(
-        self, top_n: int = 5
-    ) -> List[Tuple[Tuple[str, str], int]]:
+    def _get_most_common_transitions(self, top_n: int = 5) -> List[Tuple[Tuple[str, str], int]]:
         """Get most common transitions."""
         sorted_transitions = sorted(
             self.transition_counts.items(), key=lambda x: x[1], reverse=True
@@ -461,9 +448,7 @@ class StageRouter:
             return []
 
         avg_failures = sum(failure_counts.values()) / len(failure_counts)
-        return [
-            stage for stage, count in failure_counts.items() if count > avg_failures
-        ]
+        return [stage for stage, count in failure_counts.items() if count > avg_failures]
 
     def export_graph(self, filename: str = "stage_graph.png") -> None:
         """Export stage graph visualization."""
@@ -539,9 +524,7 @@ if __name__ == "__main__":
     test_decisions = [
         StrategyDecision(action=Decision.PROCEED, reason="Starting"),
         StrategyDecision(action=Decision.PROCEED, reason="Good research"),
-        StrategyDecision(
-            action=Decision.REROUTE, target_stage="research", reason="Need more info"
-        ),
+        StrategyDecision(action=Decision.REROUTE, target_stage="research", reason="Need more info"),
         StrategyDecision(action=Decision.PROCEED, reason="Research complete"),
         StrategyDecision(action=Decision.PROCEED, reason="Reflection done"),
         StrategyDecision(action=Decision.PROCEED, reason="Decision made"),
@@ -576,12 +559,8 @@ if __name__ == "__main__":
         print(f"  {stage}: {status}")
 
     # Test path finding
-    print(
-        f"\nOptimal path from 'execute' to 'solidify': {router.suggest_optimal_path('execute')}"
-    )
-    print(
-        f"Can skip from 'think' to 'execute': {router.can_skip_to('think', 'execute')}"
-    )
+    print(f"\nOptimal path from 'execute' to 'solidify': {router.suggest_optimal_path('execute')}")
+    print(f"Can skip from 'think' to 'execute': {router.can_skip_to('think', 'execute')}")
 
     # Export graph (if matplotlib available)
     router.export_graph("test_stage_graph.png")

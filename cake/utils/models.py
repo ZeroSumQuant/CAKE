@@ -122,9 +122,7 @@ class TaskRun(SQLModel, table=True):
     constitution: "Constitution" = Relationship(back_populates="task_runs")
     stage_executions: List["StageExecution"] = Relationship(back_populates="task_run")
     decisions: List["StrategicDecision"] = Relationship(back_populates="task_run")
-    rules_created: List["AutomationRule"] = Relationship(
-        back_populates="created_by_task"
-    )
+    rules_created: List["AutomationRule"] = Relationship(back_populates="created_by_task")
 
     class Config:
         arbitrary_types_allowed = True
@@ -140,9 +138,7 @@ class Constitution(SQLModel, table=True):
 
     # JSON fields for flexibility
     base_identity: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    domain_overrides: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
+    domain_overrides: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     quality_gates: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -283,9 +279,7 @@ class ErrorPattern(SQLModel, table=True):
 
     # Pattern data
     example_errors: List[str] = Field(default_factory=list, sa_column=Column(JSON))
-    extracted_features: Dict[str, Any] = Field(
-        default_factory=dict, sa_column=Column(JSON)
-    )
+    extracted_features: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 class KnowledgeEntry(SQLModel, table=True):

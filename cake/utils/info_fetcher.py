@@ -204,9 +204,7 @@ class OfficialDocsSource(DocumentationSource):
             relevant.append("python")
 
         # Add common tools for error-related queries
-        if any(
-            term in query_lower for term in ["error", "exception", "failed", "module"]
-        ):
+        if any(term in query_lower for term in ["error", "exception", "failed", "module"]):
             if "pip" not in relevant:
                 relevant.append("pip")
             if "pytest" not in relevant and "test" in query_lower:
@@ -285,9 +283,7 @@ class StackOverflowSource(DocumentationSource):
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.API_BASE}/search", params=params
-                ) as response:
+                async with session.get(f"{self.API_BASE}/search", params=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         results = self._parse_so_results(data)
@@ -370,9 +366,7 @@ class GitHubCodeSource(DocumentationSource):
             return cached[:max_results]
 
         # Add language hint for better results
-        enhanced_query = (
-            f"{query} language:python" if "python" not in query.lower() else query
-        )
+        enhanced_query = f"{query} language:python" if "python" not in query.lower() else query
 
         headers = {
             "Accept": "application/vnd.github.v3+json",
@@ -572,9 +566,7 @@ class InfoFetcher:
                     if "score" in result.metadata:
                         formatted.append(f"**Score**: {result.metadata['score']}")
                     if "tags" in result.metadata:
-                        formatted.append(
-                            f"**Tags**: {', '.join(result.metadata['tags'])}"
-                        )
+                        formatted.append(f"**Tags**: {', '.join(result.metadata['tags'])}")
 
                 formatted.append(f"\n{result.snippet}\n")
 
@@ -598,9 +590,7 @@ class InfoFetcher:
         """
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url, timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                     if response.status == 200:
                         html = await response.text()
                         return self._extract_content(html, url)

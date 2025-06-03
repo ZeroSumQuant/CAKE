@@ -119,9 +119,7 @@ class SnapshotManager:
 
         # Restore working directory if we stashed
         if dirty_files:
-            subprocess.run(
-                ["git", "stash", "pop", "--quiet"], cwd=self.repo_path, check=True
-            )
+            subprocess.run(["git", "stash", "pop", "--quiet"], cwd=self.repo_path, check=True)
 
         logger.info(f"Created snapshot {snapshot_id}: {description}")
         return snapshot
@@ -233,9 +231,7 @@ class SnapshotManager:
 
     def get_recent_snapshots(self, limit: int = 10) -> List[Snapshot]:
         """Get recent snapshots sorted by time."""
-        sorted_snapshots = sorted(
-            self.snapshots.values(), key=lambda s: s.timestamp, reverse=True
-        )
+        sorted_snapshots = sorted(self.snapshots.values(), key=lambda s: s.timestamp, reverse=True)
         return sorted_snapshots[:limit]
 
     def cleanup_old_snapshots(self, keep_days: int = 7):
@@ -367,9 +363,7 @@ class SnapshotManager:
         for line in stash_list.splitlines():
             if stash_pattern in line:
                 stash_ref = line.split(":")[0]
-                subprocess.run(
-                    ["git", "stash", "drop", stash_ref], cwd=self.repo_path, check=True
-                )
+                subprocess.run(["git", "stash", "drop", stash_ref], cwd=self.repo_path, check=True)
                 break
 
 
@@ -416,9 +410,7 @@ def main():
     # Rollback
     rollback_parser = subparsers.add_parser("rollback", help="Rollback to snapshot")
     rollback_parser.add_argument("snapshot_id", help="Snapshot ID")
-    rollback_parser.add_argument(
-        "--discard", action="store_true", help="Discard current changes"
-    )
+    rollback_parser.add_argument("--discard", action="store_true", help="Discard current changes")
 
     # Cleanup
     cleanup_parser = subparsers.add_parser("cleanup", help="Clean old snapshots")
@@ -447,9 +439,7 @@ def main():
                 )
 
         elif args.command == "rollback":
-            success = sm.rollback_to_snapshot(
-                args.snapshot_id, keep_changes=not args.discard
-            )
+            success = sm.rollback_to_snapshot(args.snapshot_id, keep_changes=not args.discard)
             if success:
                 print(f"Rolled back to snapshot: {args.snapshot_id}")
             else:

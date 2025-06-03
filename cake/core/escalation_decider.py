@@ -160,9 +160,7 @@ class EscalationDecider:
         critical_errors = self.config["critical_errors"]
         return any(critical in context.error_type for critical in critical_errors)
 
-    def _create_critical_decision(
-        self, context: EscalationContext
-    ) -> EscalationDecision:
+    def _create_critical_decision(self, context: EscalationContext) -> EscalationDecision:
         """Create decision for critical errors."""
         return EscalationDecision(
             level=EscalationLevel.CRITICAL,
@@ -185,9 +183,7 @@ class EscalationDecider:
             return datetime.now() < self.cooldowns[key]
         return False
 
-    def _create_cooldown_decision(
-        self, context: EscalationContext
-    ) -> EscalationDecision:
+    def _create_cooldown_decision(self, context: EscalationContext) -> EscalationDecision:
         """Create decision for cooldown period."""
         key = f"{context.stage}:{context.error_type}"
         remaining = (self.cooldowns[key] - datetime.now()).total_seconds()
@@ -250,9 +246,7 @@ class EscalationDecider:
         else:
             return InterventionType.AUTO_RETRY
 
-    def _generate_reason(
-        self, level: EscalationLevel, context: EscalationContext
-    ) -> str:
+    def _generate_reason(self, level: EscalationLevel, context: EscalationContext) -> str:
         """Generate human-readable reason."""
         if level == EscalationLevel.CRITICAL:
             return f"Critical failure after {context.failure_count} attempts"
@@ -323,18 +317,14 @@ class EscalationDecider:
         cooldowns = self.config["cooldown_periods"]
         return cooldowns.get(intervention.name, 30)
 
-    def _record_decision(
-        self, decision: EscalationDecision, context: EscalationContext
-    ) -> None:
+    def _record_decision(self, decision: EscalationDecision, context: EscalationContext) -> None:
         """Record decision for analysis."""
         self.escalation_history.append((datetime.now(), decision))
 
         # Set cooldown if needed
         if decision.cooldown_seconds > 0:
             key = f"{context.stage}:{context.error_type}"
-            self.cooldowns[key] = datetime.now() + timedelta(
-                seconds=decision.cooldown_seconds
-            )
+            self.cooldowns[key] = datetime.now() + timedelta(seconds=decision.cooldown_seconds)
 
         logger.info(
             f"Escalation decision: {decision.level.name} - "
@@ -355,9 +345,7 @@ class EscalationDecider:
             intervention = decision.intervention.name
 
             level_counts[level] = level_counts.get(level, 0) + 1
-            intervention_counts[intervention] = (
-                intervention_counts.get(intervention, 0) + 1
-            )
+            intervention_counts[intervention] = intervention_counts.get(intervention, 0) + 1
 
         return {
             "total_escalations": len(self.escalation_history),

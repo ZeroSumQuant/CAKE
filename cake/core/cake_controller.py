@@ -112,9 +112,7 @@ class CakeController:
         self.operator = OperatorBuilder()
         self.recall_db = RecallDB(self.config_path / "recall.db")
         self.validator = TaskConvergenceValidator()
-        self.knowledge_ledger = CrossTaskKnowledgeLedger(
-            self.config_path / "knowledge.db"
-        )
+        self.knowledge_ledger = CrossTaskKnowledgeLedger(self.config_path / "knowledge.db")
 
         # Rate limiter for Claude API
         self.rate_limiter = RateLimiter()
@@ -124,9 +122,7 @@ class CakeController:
         self.pty_shim = PTYShim()
         self.snapshot_manager = SnapshotManager()
 
-    async def start_task(
-        self, task_description: str, constitution: Constitution
-    ) -> str:
+    async def start_task(self, task_description: str, constitution: Constitution) -> str:
         """
         Start a new autonomous task.
 
@@ -206,9 +202,7 @@ class CakeController:
                 }
             )
 
-    async def _check_intervention_needed(
-        self, context: TaskContext, stage: str
-    ) -> Optional[str]:
+    async def _check_intervention_needed(self, context: TaskContext, stage: str) -> Optional[str]:
         """Check if operator intervention is needed."""  # Check recall DB for repeat errors
         if context.errors:
             last_error = context.errors[-1]
@@ -217,9 +211,7 @@ class CakeController:
 
         # Check stage-specific issues
         if stage == "validate" and not context.stage_outputs.get("execute"):
-            return self.operator.build_message(
-                {"type": "TEST_SKIP", "context": "No tests written"}
-            )
+            return self.operator.build_message({"type": "TEST_SKIP", "context": "No tests written"})
 
         return None
 
@@ -255,9 +247,7 @@ class CakeController:
 
     async def _validate_completion(self, context: TaskContext) -> bool:
         """Validate task completed successfully."""
-        return self.validator.validate_task_convergence(
-            context.stage_outputs, context.description
-        )
+        return self.validator.validate_task_convergence(context.stage_outputs, context.description)
 
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get current status of a task."""
@@ -271,8 +261,7 @@ class CakeController:
             "current_stage": context.current_stage,
             "interventions": len(context.interventions),
             "errors": len(context.errors),
-            "elapsed_minutes": (datetime.now() - context.start_time).total_seconds()
-            / 60,
+            "elapsed_minutes": (datetime.now() - context.start_time).total_seconds() / 60,
         }
 
     async def abort_task(self, task_id: str) -> bool:
@@ -290,9 +279,7 @@ class CakeController:
         """Clean up resources."""
         # Clean old tasks
         cutoff = datetime.now() - timedelta(hours=24)
-        old_tasks = [
-            tid for tid, ctx in self.active_tasks.items() if ctx.start_time < cutoff
-        ]
+        old_tasks = [tid for tid, ctx in self.active_tasks.items() if ctx.start_time < cutoff]
 
         for task_id in old_tasks:
             del self.active_tasks[task_id]

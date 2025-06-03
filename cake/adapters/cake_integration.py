@@ -90,9 +90,7 @@ class CAKEIntegration:
         if self.config.get("escalation_webhook"):
             self.adapter.add_post_message_hook(self._escalation_hook)
 
-    async def start_task(
-        self, task_description: str, constitution: Dict[str, Any]
-    ) -> str:
+    async def start_task(self, task_description: str, constitution: Dict[str, Any]) -> str:
         """
         Start a new task with CAKE supervision.
 
@@ -135,9 +133,7 @@ class CAKEIntegration:
 
         return task_id
 
-    async def process_stage(
-        self, stage: str, context: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def process_stage(self, stage: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a TRRDEVS stage with supervision.
 
@@ -202,9 +198,7 @@ class CAKEIntegration:
         Returns:
             Final validation report
         """  # Validate task convergence
-        validation = await self.adapter.validate_task_convergence(
-            stage_outputs, artifacts
-        )
+        validation = await self.adapter.validate_task_convergence(stage_outputs, artifacts)
 
         # Get final statistics
         stats = self.adapter.get_system_status()
@@ -219,9 +213,7 @@ class CAKEIntegration:
             "intervention_count": stats["intervention_count"],
         }
 
-    async def _pre_stage_check(
-        self, stage: str, context: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _pre_stage_check(self, stage: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Pre-stage intervention checks."""
         result = {"intervention": None}
 
@@ -237,9 +229,7 @@ class CAKEIntegration:
                 },
             )
             # FIX: Get string message from operator
-            intervention_message = self.adapter.operator.build_message(
-                intervention_context
-            )
+            intervention_message = self.adapter.operator.build_message(intervention_context)
             result["intervention"] = intervention_message
 
         return result
@@ -250,9 +240,7 @@ class CAKEIntegration:
 
         if any(word in desc_lower for word in ["fix", "bug", "error", "issue"]):
             return "bug_fix"
-        elif any(
-            word in desc_lower for word in ["add", "implement", "create", "feature"]
-        ):
+        elif any(word in desc_lower for word in ["add", "implement", "create", "feature"]):
             return "feature"
         elif any(word in desc_lower for word in ["refactor", "optimize", "improve"]):
             return "refactor"
@@ -408,9 +396,7 @@ async def main():
 
         # Finalize
         validation = await cake.finalize_task({}, [])
-        print(
-            f"\nTask completed. Interventions: {validation['statistics']['intervention_count']}"
-        )
+        print(f"\nTask completed. Interventions: {validation['statistics']['intervention_count']}")
 
     else:
         parser.print_help()
