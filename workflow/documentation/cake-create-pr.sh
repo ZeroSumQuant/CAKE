@@ -11,6 +11,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Cleanup on exit
+trap 'rm -f "$PR_BODY_FILE" 2>/dev/null' EXIT
+
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -46,6 +49,12 @@ print_warning() {
     echo -e "${YELLOW}[!]${NC} $1"
 }
 
+# Check prerequisites
+if ! command -v gh &> /dev/null; then
+    print_error "GitHub CLI (gh) not found. Install with: brew install gh"
+    exit 1
+fi
+
 # Check if we're in a git repository
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
     print_error "Not in a git repository"
@@ -64,6 +73,11 @@ print_header "CAKE PR Generator with Conversation Context"
 print_status "Current branch: $CURRENT_BRANCH"
 
 # Step 1: Verify lint status
+# Ensure .cake directory exists
+if [ ! -d "$PROJECT_ROOT/.cake" ]; then
+    mkdir -p "$PROJECT_ROOT/.cake"
+fi
+
 print_status "Checking lint status..."
 if [ ! -f "$PROJECT_ROOT/.cake/lint-status" ]; then
     print_error "No lint status found. Run cake-lint.sh first"
@@ -79,14 +93,17 @@ fi
 print_success "Lint checks passed"
 
 # Step 2: Verify handoff document exists
-print_status "Checking for today's handoff document..."
-HANDOFF_COUNT=$(find "$PROJECT_ROOT/docs/handoff" -name "${TODAY}-*.md" -type f 2>/dev/null | wc -l)
+print_status "Checking for recent handoff document..."
+# Look for handoff from today or yesterday (in case working past midnight)
+YESTERDAY=$(date -v-1d +%Y-%m-%d 2>/dev/null || date -d "yesterday" +%Y-%m-%d)
+HANDOFF_COUNT=$(find "$PROJECT_ROOT/docs/handoff" \( -name "${TODAY}-*.md" -o -name "${YESTERDAY}-*.md" \) -type f 2>/dev/null | wc -l)
+
 if [ "$HANDOFF_COUNT" -eq 0 ]; then
-    print_error "No handoff document found for today ($TODAY)"
-    print_status "Run: ./scripts/cake-handoff.sh"
+    print_error "No recent handoff document found"
+    print_status "Run: ./workflow/documentation/cake-handoff.sh"
     exit 1
 fi
-HANDOFF_FILE=$(find "$PROJECT_ROOT/docs/handoff" -name "${TODAY}-*.md" -type f 2>/dev/null | sort | tail -1)
+HANDOFF_FILE=$(find "$PROJECT_ROOT/docs/handoff" \( -name "${TODAY}-*.md" -o -name "${YESTERDAY}-*.md" \) -type f 2>/dev/null | sort | tail -1)
 print_success "Found handoff: $(basename "$HANDOFF_FILE")"
 
 # Step 3: Verify task log updated
@@ -213,12 +230,19 @@ fi
 # Step 5: Generate PR description
 print_status "Generating PR description..."
 
-# Get commit summary
-COMMITS_SUMMARY=$(git log origin/main..HEAD --oneline 2>/dev/null || echo "No commits yet")
+# Get commit summary - handle different default branches
+DEFAULT_BRANCH="main"
+if ! git rev-parse --verify "origin/main" >/dev/null 2>&1; then
+    if git rev-parse --verify "origin/master" >/dev/null 2>&1; then
+        DEFAULT_BRANCH="master"
+    fi
+fi
+
+COMMITS_SUMMARY=$(git log origin/${DEFAULT_BRANCH}..HEAD --oneline 2>/dev/null || echo "No commits yet")
 COMMITS_COUNT=$(echo "$COMMITS_SUMMARY" | wc -l | tr -d ' ')
 
 # Get changed files summary
-CHANGED_FILES=$(git diff origin/main...HEAD --name-status 2>/dev/null || git diff --cached --name-status)
+CHANGED_FILES=$(git diff origin/${DEFAULT_BRANCH}...HEAD --name-status 2>/dev/null || git diff --cached --name-status)
 FILES_COUNT=$(echo "$CHANGED_FILES" | wc -l | tr -d ' ')
 NEW_FILES=$(echo "$CHANGED_FILES" | grep "^A" | wc -l | tr -d ' ')
 MODIFIED_FILES=$(echo "$CHANGED_FILES" | grep "^M" | wc -l | tr -d ' ')
@@ -385,8 +409,16 @@ if ! git log origin/main..HEAD --oneline >/dev/null 2>&1; then
 fi
 
 # Push the current branch if needed
-if ! git push -u origin "$CURRENT_BRANCH" 2>/dev/null; then
-    print_warning "Branch already pushed or push failed"
+print_status "Pushing branch to remote..."
+if ! git push -u origin "$CURRENT_BRANCH"; then
+    print_error "Failed to push branch to remote"
+    print_status "This is likely why PR creation fails. Check for:"
+    print_status "  - Authentication issues: gh auth status"
+    print_status "  - Network connectivity"
+    print_status "  - Branch protection rules"
+    exit 1
+else
+    print_success "Branch pushed successfully"
 fi
 
 # Create PR using gh CLI
@@ -416,10 +448,20 @@ print_status "Creating PR with title: $PR_TITLE"
 PR_BODY_FILE=$(mktemp)
 echo "$PR_BODY" > "$PR_BODY_FILE"
 
+# Check PR body size (GitHub limit is ~65KB)
+PR_BODY_SIZE=$(wc -c < "$PR_BODY_FILE" | tr -d ' ')
+if [ "$PR_BODY_SIZE" -gt 65000 ]; then
+    print_warning "PR body is large (${PR_BODY_SIZE} bytes), truncating to fit GitHub limit..."
+    # Keep first 64KB and add truncation note
+    head -c 64000 "$PR_BODY_FILE" > "${PR_BODY_FILE}.tmp"
+    echo -e "\n\n---\n*[PR description truncated due to size limit]*" >> "${PR_BODY_FILE}.tmp"
+    mv "${PR_BODY_FILE}.tmp" "$PR_BODY_FILE"
+fi
+
 if gh pr create \
     --title "$PR_TITLE" \
     --body-file "$PR_BODY_FILE" \
-    --base main \
+    --base "$DEFAULT_BRANCH" \
     --head "$CURRENT_BRANCH"; then
     print_success "Pull request created successfully!"
     
