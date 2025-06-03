@@ -77,12 +77,17 @@ class BadClaudeSimulator:
         # Get the appropriate attack handler
         attack_handler = self.attacks.get(attack_pattern.category)
         if not attack_handler:
-            raise ValueError(f"No handler for attack category: {attack_pattern.category}")
+            raise ValueError(
+                f"No handler for attack category: {attack_pattern.category}"
+            )
 
         # Execute the attack
         try:
             result = attack_handler.execute(
-                pattern=attack_pattern, target=target_system, safe_mode=self.safe_mode, **kwargs
+                pattern=attack_pattern,
+                target=target_system,
+                safe_mode=self.safe_mode,
+                **kwargs,
             )
 
             # Create attack result
@@ -107,7 +112,9 @@ class BadClaudeSimulator:
             self.logger.error(f"Attack execution failed: {str(e)}")
             raise
 
-    def run_scenario(self, scenario_name: str, target_system: Any, **kwargs) -> List[AttackResult]:
+    def run_scenario(
+        self, scenario_name: str, target_system: Any, **kwargs
+    ) -> List[AttackResult]:
         """
         Run a predefined attack scenario.
 
@@ -164,7 +171,9 @@ class BadClaudeSimulator:
                 "total_attacks": total_attacks,
                 "successful_attacks": successful_attacks,
                 "detected_attacks": detected_attacks,
-                "detection_rate": detected_attacks / total_attacks if total_attacks > 0 else 0,
+                "detection_rate": (
+                    detected_attacks / total_attacks if total_attacks > 0 else 0
+                ),
             },
             "by_category": self._group_by_category(),
             "timeline": [self._serialize_result(r) for r in self.attack_history],

@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Tuple
 
 class ComponentSpec:
     """Represents a component specification."""
-    
+
     def __init__(
         self,
         name: str,
@@ -38,7 +38,7 @@ class ComponentSpec:
 
 class SpecificationParser:
     """Parses component specifications from markdown."""
-    
+
     def __init__(self, spec_file: Path) -> None:
         """Initialize specification parser."""
         self.spec_file = spec_file
@@ -47,16 +47,16 @@ class SpecificationParser:
     def get_available_components(self) -> List[str]:
         """Get list of components defined in spec."""
         components = []
-        
+
         # Look for component sections
         pattern = r"### (\w+)\s*\n"
         matches = re.findall(pattern, self.content)
-        
+
         for match in matches:
             # Skip non-component sections
             if match not in ["Overview", "Architecture", "Requirements"]:
                 components.append(match)
-                
+
         return components
 
 
@@ -64,13 +64,18 @@ def main():
     """Main entry point."""
     parser = _create_argument_parser()
     args = parser.parse_args()
-    
-    spec_file = Path(__file__).parent.parent.parent / "docs" / "guides" / "cake-components-v2.md"
-    
+
+    spec_file = (
+        Path(__file__).parent.parent.parent
+        / "docs"
+        / "guides"
+        / "cake-components-v2.md"
+    )
+
     if not spec_file.exists():
         print(f"Error: Specification file not found: {spec_file}")
         sys.exit(1)
-        
+
     if args.list:
         spec_parser = SpecificationParser(spec_file)
         components = spec_parser.get_available_components()
@@ -78,36 +83,36 @@ def main():
         for comp in components:
             print(f"  - {comp}")
         sys.exit(0)
-        
+
     if not args.component:
         parser.print_help()
         sys.exit(1)
-        
+
     print(f"Generating {args.component} component...")
     # Implementation would go here
-    
+
 
 def _create_argument_parser() -> argparse.ArgumentParser:
     """Create and return the argument parser."""
     parser = argparse.ArgumentParser(
         description="Generate CAKE component code from specifications",
     )
-    
+
     parser.add_argument(
-        "--component", "-c", 
-        help="Component name to generate (e.g., Operator, RecallDB)"
+        "--component",
+        "-c",
+        help="Component name to generate (e.g., Operator, RecallDB)",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=Path,
-        help="Output file path (default: cake/components/<component>.py)"
+        help="Output file path (default: cake/components/<component>.py)",
     )
     parser.add_argument(
-        "--list", "-l",
-        action="store_true",
-        help="List available components"
+        "--list", "-l", action="store_true", help="List available components"
     )
-    
+
     return parser
 
 

@@ -37,11 +37,14 @@ from cake.adapters.claude_orchestration import (
 class TestCAKEAdapter:
     """
     Test the main CAKE adapter."""
+
     @pytest.fixture
     def mock_components(self):
         """Create mock components for testing."""
         operator = Mock()
-        operator.build_message.return_value = "Operator (CAKE): Stop. Fix the error. See docs."
+        operator.build_message.return_value = (
+            "Operator (CAKE): Stop. Fix the error. See docs."
+        )
 
         recall_db = Mock()
         recall_db.is_repeat_error.return_value = False
@@ -149,10 +152,11 @@ class TestCAKEAdapter:
 
 class TestCAKEIntegration:
     """Test the CAKE integration layer."""
+
     @pytest.fixture
     def integration(self):
         """
-                                       Create integration instance for testing."""
+        Create integration instance for testing."""
         with patch("cake.adapters.cake_integration.create_cake_system") as mock_create:
             mock_adapter = Mock()
 
@@ -185,18 +189,23 @@ class TestCAKEIntegration:
     def test_classify_task_type(self, integration):
         """Test task type classification."""
         assert integration._classify_task_type("Fix the bug in parser") == "bug_fix"
-        assert integration._classify_task_type("Add new feature for export") == "feature"
-        assert integration._classify_task_type("Refactor the database layer") == "refactor"
+        assert (
+            integration._classify_task_type("Add new feature for export") == "feature"
+        )
+        assert (
+            integration._classify_task_type("Refactor the database layer") == "refactor"
+        )
         assert integration._classify_task_type("Write tests for API") == "testing"
         assert integration._classify_task_type("Update documentation") == "general"
 
 
 class TestPromptOrchestration:
     """Test the prompt orchestration system."""
+
     @pytest.fixture
     def orchestrator(self):
         """
-                                            Create orchestrator for testing."""
+        Create orchestrator for testing."""
         mock_client = Mock()
         mock_client.chat.return_value = Mock(content="Test response")
 
@@ -277,7 +286,10 @@ The error occurs because the 'requests' module is not installed.
             expected_format=None,
         )
 
-        assert analysis["overall_quality"] in [ResponseQuality.GOOD, ResponseQuality.EXCELLENT]
+        assert analysis["overall_quality"] in [
+            ResponseQuality.GOOD,
+            ResponseQuality.EXCELLENT,
+        ]
         assert analysis["quality_scores"]["completeness"] > 0.5
         assert "code_blocks" in analysis["extracted_data"]
 
@@ -302,9 +314,10 @@ The error occurs because the 'requests' module is not installed.
 
 class TestCreateCakeSystem:
     """Test the CAKE system factory."""
+
     def test_create_cake_system(self):
         """
-                                    Test creating a complete CAKE system."""
+        Test creating a complete CAKE system."""
         with patch("cake.adapters.cake_adapter.OperatorBuilder"), patch(
             "cake.adapters.cake_adapter.RecallDB"
         ), patch("cake.adapters.cake_adapter.CrossTaskKnowledgeLedger"), patch(

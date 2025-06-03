@@ -166,7 +166,9 @@ class CAKEAdapter:
                 intervention_type=InterventionType.REPEAT_ERROR,
                 current_action="error_handling",
                 error_details=error,
-                previous_attempts=self.recall_db.get_error_history(error.get("message", "")),
+                previous_attempts=self.recall_db.get_error_history(
+                    error.get("message", "")
+                ),
             )
             return self.operator.build_message(context)
 
@@ -256,7 +258,9 @@ class CAKEAdapter:
             {
                 "stage_outputs": stage_outputs,
                 "artifacts": artifacts,
-                "task_description": self.current_state.task_context.get("description", ""),
+                "task_description": self.current_state.task_context.get(
+                    "description", ""
+                ),
             }
         )
 
@@ -268,7 +272,9 @@ class CAKEAdapter:
             "errors_in_memory": self.recall_db.get_error_count(),
             "knowledge_entries": self.knowledge_ledger.get_entry_count(),
             "last_intervention": (
-                self.last_intervention_time.isoformat() if self.last_intervention_time else None
+                self.last_intervention_time.isoformat()
+                if self.last_intervention_time
+                else None
             ),
         }
 
@@ -310,7 +316,9 @@ class CAKEAdapter:
             "ci_status": self.current_state.ci_status,
             "linter_status": self.current_state.linter_status,
             "coverage_metrics": self.current_state.coverage_metrics,
-            "command_history": self.current_state.command_queue[-10:],  # Last 10 commands
+            "command_history": self.current_state.command_queue[
+                -10:
+            ],  # Last 10 commands
         }
 
     def _detect_feature_creep(self, changes: Dict[str, Any]) -> bool:
@@ -340,7 +348,9 @@ class CAKEAdapter:
         )
         self.conversation_history.append(msg)
 
-        logger.info(f"Intervention #{self.intervention_count}: {context.intervention_type.name}")
+        logger.info(
+            f"Intervention #{self.intervention_count}: {context.intervention_type.name}"
+        )
 
     async def _execute_pre_hooks(self, message: str):
         """Execute pre-message hooks."""

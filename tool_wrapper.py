@@ -61,7 +61,11 @@ if __name__ == "__main__":
     print(interceptor.wrap_bash_response("ls", "file1.txt\nfile2.txt"))
 
     print("\nExample 2 - Python running bash:")
-    print(interceptor.wrap_bash_response("python3 test.sh", "SyntaxError: invalid syntax"))
+    print(
+        interceptor.wrap_bash_response("python3 test.sh", "SyntaxError: invalid syntax")
+    )
 
     print("\nExample 3 - Missing venv:")
-    print(interceptor.wrap_bash_response("cd .venv", "No such file or directory: .venv"))
+    print(
+        interceptor.wrap_bash_response("cd .venv", "No such file or directory: .venv")
+    )

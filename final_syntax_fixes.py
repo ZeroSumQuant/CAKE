@@ -128,22 +128,22 @@ class SpecificationParser:
 
 # File 4: test_cake_core.py - Fix the router test
 fix4_lines = {
-    200: '        decision1 = strategist.decide(state)\n',
-    201: '        decision2 = strategist.decide(state)\n',
-    202: '\n',
-    256: '        for i in range(len(stages) - 1):\n',
-    257: '            router.set_current_stage(stages[i])\n',
-    258: '',
-    320: '        is_valid, issues = validator.validate_proposal(proposal)\n',
-    321: '\n',
+    200: "        decision1 = strategist.decide(state)\n",
+    201: "        decision2 = strategist.decide(state)\n",
+    202: "\n",
+    256: "        for i in range(len(stages) - 1):\n",
+    257: "            router.set_current_stage(stages[i])\n",
+    258: "",
+    320: "        is_valid, issues = validator.validate_proposal(proposal)\n",
+    321: "\n",
     339: '        """Test complete task run lifecycle."""\n',
-    340: '        async with persistence_layer.session() as session:\n',
-    341: '            # Create constitution\n',
-    342: '            constitution = ConstitutionFactory.build()\n',
+    340: "        async with persistence_layer.session() as session:\n",
+    341: "            # Create constitution\n",
+    342: "            constitution = ConstitutionFactory.build()\n",
     400: '        """Test basic token bucket functionality."""\n',
-    401: '        limiter = RateLimiter(redis_client)\n',
+    401: "        limiter = RateLimiter(redis_client)\n",
     437: '        """Test health check endpoint."""\n',
-    438: '        from fastapi.testclient import TestClient\n',
+    438: "        from fastapi.testclient import TestClient\n",
 }
 
 # Now apply these fixes
@@ -154,13 +154,13 @@ files_to_fix = [
 ]
 
 for filepath, content in files_to_fix:
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         f.write(content)
     print(f"✓ Fixed: {filepath}")
 
 # For test_cake_core.py, we need to read and fix specific lines
 filepath = "./tests/unit/test_cake_core.py"
-with open(filepath, 'r') as f:
+with open(filepath, "r") as f:
     lines = f.readlines()
 
 # Apply line fixes
@@ -170,15 +170,16 @@ for line_num, new_content in fix4_lines.items():
             lines[line_num - 1] = new_content
         else:
             # Remove the line
-            lines[line_num - 1] = ''
+            lines[line_num - 1] = ""
 
-with open(filepath, 'w') as f:
+with open(filepath, "w") as f:
     f.writelines(lines)
 print(f"✓ Fixed: {filepath}")
 
 # Need to complete the stub component script
-with open("./scripts/components/cake-stub-component.py", 'a') as f:
-    f.write('''
+with open("./scripts/components/cake-stub-component.py", "a") as f:
+    f.write(
+        '''
     def get_available_components(self) -> List[str]:
         """Get list of components defined in spec."""
         components = []
@@ -248,6 +249,7 @@ def _create_argument_parser() -> argparse.ArgumentParser:
 
 if __name__ == "__main__":
     main()
-''')
+'''
+    )
 
 print("\nAll syntax errors fixed!")

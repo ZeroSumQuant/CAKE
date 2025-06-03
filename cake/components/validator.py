@@ -221,7 +221,9 @@ class RequirementExtractor:
         else:
             return "medium"
 
-    def _extract_implicit_requirements(self, task_description: str) -> List[RequirementTrace]:
+    def _extract_implicit_requirements(
+        self, task_description: str
+    ) -> List[RequirementTrace]:
         """Extract implicit requirements based on task type."""
         implicit = []
         desc_lower = task_description.lower()
@@ -281,7 +283,9 @@ class RequirementExtractor:
 
                 if similarity > 0.8:  # 80% similarity threshold
                     # Merge metadata and keep higher priority
-                    if self._priority_value(req.priority) > self._priority_value(existing.priority):
+                    if self._priority_value(req.priority) > self._priority_value(
+                        existing.priority
+                    ):
                         existing.priority = req.priority
                     existing.metadata.update(req.metadata)
                     is_duplicate = True
@@ -333,12 +337,16 @@ class SolutionAnalyzer:
 
         # Analyze each requirement
         for req in requirements:
-            req_analysis = await self._analyze_requirement(req, stage_outputs, final_artifacts)
+            req_analysis = await self._analyze_requirement(
+                req, stage_outputs, final_artifacts
+            )
             analysis["requirement_analysis"][req.id] = req_analysis
 
         # Analyze code quality and completeness
         if final_artifacts:
-            analysis["code_analysis"] = await self._analyze_code_quality(final_artifacts)
+            analysis["code_analysis"] = await self._analyze_code_quality(
+                final_artifacts
+            )
 
         # Analyze deliverables
         analysis["deliverable_analysis"] = await self._analyze_deliverables(
@@ -372,7 +380,9 @@ class SolutionAnalyzer:
         semantic_analysis = await self._semantic_requirement_check(req, evidence)
 
         # Calculate confidence
-        confidence = self._calculate_requirement_confidence(req, evidence, semantic_analysis)
+        confidence = self._calculate_requirement_confidence(
+            req, evidence, semantic_analysis
+        )
 
         return {
             "requirement": req.text,
@@ -466,7 +476,9 @@ class SolutionAnalyzer:
         }
 
         # Extract structured data
-        if match := re.search(r"FULFILLED:\s*(yes|no|partial)", response, re.IGNORECASE):
+        if match := re.search(
+            r"FULFILLED:\s*(yes|no|partial)", response, re.IGNORECASE
+        ):
             result["fulfilled"] = match.group(1).lower()
 
         if match := re.search(r"CONFIDENCE:\s*(\d*\.?\d+)", response):
@@ -477,7 +489,9 @@ class SolutionAnalyzer:
 
         if match := re.search(r"MISSING:\s*(.+)", response, re.DOTALL):
             missing_text = match.group(1).strip()
-            result["missing"] = [item.strip() for item in missing_text.split("\n") if item.strip()]
+            result["missing"] = [
+                item.strip() for item in missing_text.split("\n") if item.strip()
+            ]
 
         return result
 
@@ -507,7 +521,9 @@ class SolutionAnalyzer:
             "unknown": 0.3,
         }.get(semantic.get("fulfilled", "unknown"), 0.3)
 
-        confidence = (base_confidence + evidence_bonus) * priority_weight * fulfillment_modifier
+        confidence = (
+            (base_confidence + evidence_bonus) * priority_weight * fulfillment_modifier
+        )
 
         return min(confidence, 1.0)
 
@@ -532,11 +548,16 @@ class SolutionAnalyzer:
             quality_checks["has_tests"] = True
 
         # Check for documentation
-        if any(pattern in combined_artifacts for pattern in ['"""', "'''", "# ", "README"]):
+        if any(
+            pattern in combined_artifacts for pattern in ['"""', "'''", "# ", "README"]
+        ):
             quality_checks["has_documentation"] = True
 
         # Check for error handling
-        if any(pattern in combined_artifacts for pattern in ["try:", "except:", "raise", "assert"]):
+        if any(
+            pattern in combined_artifacts
+            for pattern in ["try:", "except:", "raise", "assert"]
+        ):
             quality_checks["has_error_handling"] = True
 
         # More sophisticated analysis could go here
@@ -551,7 +572,8 @@ class SolutionAnalyzer:
             "total_stages_completed": len([s for s in stage_outputs.values() if s]),
             "artifacts_generated": len(artifacts),
             "has_final_implementation": len(artifacts) > 0,
-            "execution_successful": "execute" in stage_outputs and stage_outputs["execute"],
+            "execution_successful": "execute" in stage_outputs
+            and stage_outputs["execute"],
             "validation_passed": "validate" in stage_outputs
             and "success" in str(stage_outputs.get("validate", "")).lower(),
         }
@@ -685,9 +707,15 @@ class TaskConvergenceValidator:
                     low_confidence_items.append(req.text)
 
         # Calculate overall metrics
-        requirements_met = fulfilled_count / total_requirements if total_requirements > 0 else 0.0
-        avg_confidence = total_confidence / total_requirements if total_requirements > 0 else 0.0
-        critical_success_rate = critical_fulfilled / len(critical_reqs) if critical_reqs else 1.0
+        requirements_met = (
+            fulfilled_count / total_requirements if total_requirements > 0 else 0.0
+        )
+        avg_confidence = (
+            total_confidence / total_requirements if total_requirements > 0 else 0.0
+        )
+        critical_success_rate = (
+            critical_fulfilled / len(critical_reqs) if critical_reqs else 1.0
+        )
         high_success_rate = high_fulfilled / len(high_reqs) if high_reqs else 1.0
 
         # Determine convergence status
@@ -708,7 +736,8 @@ class TaskConvergenceValidator:
             "fulfilled_requirements": [
                 r.text
                 for r in requirements
-                if analysis["requirement_analysis"].get(r.id, {}).get("confidence", 0) >= 0.7
+                if analysis["requirement_analysis"].get(r.id, {}).get("confidence", 0)
+                >= 0.7
             ],
         }
 
@@ -803,12 +832,16 @@ class TaskConvergenceValidator:
                 "🔄 RESTART: Consider re-approaching the problem from the 'think' stage"
             )
         elif requirements_met < 0.8:
-            recommendations.append("🔧 ITERATE: Return to 'execute' stage to address gaps")
+            recommendations.append(
+                "🔧 ITERATE: Return to 'execute' stage to address gaps"
+            )
 
         # Deliverable issues
         deliverable_analysis = analysis.get("deliverable_analysis", {})
         if not deliverable_analysis.get("has_final_implementation", False):
-            recommendations.append("💻 IMPLEMENT: No final implementation artifacts found")
+            recommendations.append(
+                "💻 IMPLEMENT: No final implementation artifacts found"
+            )
 
         return recommendations
 
@@ -901,7 +934,9 @@ if __name__ == "__main__":
         ]
 
         # Run validation
-        report = await validator.validate_convergence(original_task, stage_outputs, final_artifacts)
+        report = await validator.validate_convergence(
+            original_task, stage_outputs, final_artifacts
+        )
 
         print("=== TASK CONVERGENCE VALIDATION REPORT ===")
         print(f"Status: {report.status.name}")
