@@ -16,7 +16,11 @@ CORE_COMPONENTS = [
     ("Validator", "cake.components.validator", "TaskConvergenceValidator"),
     ("Watchdog", "cake.components.watchdog", "Watchdog"),  # Missing
     ("SnapshotManager", "cake.components.snapshot_manager", "SnapshotManager"),
-    ("VoiceSimilarityGate", "cake.components.voice_gate", "VoiceSimilarityGate"),  # Missing
+    (
+        "VoiceSimilarityGate",
+        "cake.components.voice_gate",
+        "VoiceSimilarityGate",
+    ),  # Missing
     ("KnowledgeLedger", "cake.components.knowledge_ledger", "CrossTaskKnowledgeLedger"),
 ]
 
@@ -25,7 +29,11 @@ UTILS_COMPONENTS = [
     ("RateLimiter", "cake.utils.rate_limiter", "RateLimiter"),
     ("RuleCreator", "cake.utils.rule_creator", "RuleCreator"),
     ("InfoFetcher", "cake.utils.info_fetcher", "InfoFetcher"),
-    ("AdaptiveConfidence", "cake.utils.adaptive_confidence", "AdaptiveConfidenceEngine"),
+    (
+        "AdaptiveConfidence",
+        "cake.utils.adaptive_confidence",
+        "AdaptiveConfidenceEngine",
+    ),
 ]
 
 ADAPTER_COMPONENTS = [

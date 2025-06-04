@@ -51,6 +51,7 @@ from cake.utils.rule_creator import RuleCreator, RuleProposal, RuleValidator
 class ConstitutionFactory(Factory):
     """
     Factory for Constitution test data."""
+
     class Meta:
         model = Constitution
 
@@ -65,6 +66,7 @@ class ConstitutionFactory(Factory):
 
 class TaskRunFactory(Factory):
     """Factory for TaskRun test data."""
+
     class Meta:
         model = TaskRun
 
@@ -131,6 +133,7 @@ def mock_claude_client():
 # Unit Tests
 class TestStrategist:
     """Test the Strategist decision engine."""
+
     @pytest.fixture
     def strategist(self, tmp_path):
         """Create test strategist with policy."""
@@ -147,12 +150,18 @@ abort_conditions:
 escalate_conditions:
   - "stage == 'execute' and failure_count >= 3"
 """
-    )
+        )
         return Strategist(policy_file)
 
     def test_abort_on_cost_overrun(self, strategist):
         """Test abort decision on cost overrun."""
-        state = {"stage": "execute", "failure_count": 1, "cost": 6.0, "budget": 5.0, "error": ""}
+        state = {
+            "stage": "execute",
+            "failure_count": 1,
+            "cost": 6.0,
+            "budget": 5.0,
+            "error": "",
+        }
         decision = strategist.decide(state)
 
         assert decision.action == Decision.ABORT
@@ -175,7 +184,13 @@ escalate_conditions:
 
     def test_proceed_when_no_issues(self, strategist):
         """Test proceed decision when everything is fine."""
-        state = {"stage": "think", "failure_count": 0, "cost": 0.5, "budget": 5.0, "error": ""}
+        state = {
+            "stage": "think",
+            "failure_count": 0,
+            "cost": 0.5,
+            "budget": 5.0,
+            "error": "",
+        }
 
         decision = strategist.decide(state)
 
@@ -198,13 +213,13 @@ escalate_conditions:
         decision1 = strategist.decide(state)
         decision2 = strategist.decide(state)
 
-
         assert decision1.action == decision2.action
         assert decision1.confidence == decision2.confidence
 
 
 class TestStageRouter:
     """Test the stage navigation system."""
+
     @pytest.fixture
     def router(self):
         """Create test router."""
@@ -265,6 +280,7 @@ class TestStageRouter:
 
 class TestRuleValidator:
     """Test rule validation for safety."""
+
     @pytest.fixture
     def validator(self):
         """Create test validator."""
@@ -331,6 +347,7 @@ class TestRuleValidator:
 # Integration Tests
 class TestPersistenceIntegration:
     """Test database operations integration."""
+
     @pytest.mark.asyncio
     async def test_task_run_lifecycle(self, persistence_layer):
         """Test complete task run lifecycle."""
@@ -347,7 +364,9 @@ class TestPersistenceIntegration:
             assert task_run.id is not None
 
             # Update metrics
-            await task_repo.update_metrics(task_run.id, cost_delta=0.05, token_delta=150)
+            await task_repo.update_metrics(
+                task_run.id, cost_delta=0.05, token_delta=150
+            )
 
             # Verify update
             updated = await task_repo.get(task_run.id)
@@ -383,7 +402,10 @@ class TestPersistenceIntegration:
 
             # Record application
             await rule_repo.record_application(
-                rule.id, uuid4(), success=True, execution_time_ms=250  # stage_execution_id
+                rule.id,
+                uuid4(),
+                success=True,
+                execution_time_ms=250,  # stage_execution_id
             )
 
             # Check stats
@@ -394,13 +416,16 @@ class TestPersistenceIntegration:
     @pytest.mark.asyncio
     async def test_concurrent_operations(self, persistence_layer):
         """Test concurrent database operations don't conflict."""
+
         async def create_task_run(name: str):
             async with persistence_layer.session() as session:
                 constitution = Constitution(name=f"const_{name}")
                 session.add(constitution)
                 await session.commit()
 
-                task = TaskRun(task_description=f"Task {name}", constitution_id=constitution.id)
+                task = TaskRun(
+                    task_description=f"Task {name}", constitution_id=constitution.id
+                )
                 task_repo = persistence_layer.get_task_repository(session)
                 return await task_repo.create(task)
 
@@ -414,6 +439,7 @@ class TestPersistenceIntegration:
 
 class TestRateLimiter:
     """Test rate limiting functionality."""
+
     @pytest.mark.asyncio
     async def test_token_bucket_basic(self, redis_client):
         """Test basic token bucket functionality."""
@@ -453,6 +479,7 @@ class TestRateLimiter:
 # API Integration Tests
 class TestAPIIntegration:
     """Test FastAPI application."""
+
     @pytest.mark.asyncio
     async def test_health_endpoint(self):
         """Test health check endpoint."""
@@ -481,9 +508,18 @@ class CAKEStateMachine(RuleBasedStateMachine):
 
     Ensures that no sequence of operations can violate invariants.
     """
+
     def __init__(self):
         super().__init__()
-        self.stages = ["think", "research", "reflect", "decide", "execute", "validate", "solidify"]
+        self.stages = [
+            "think",
+            "research",
+            "reflect",
+            "decide",
+            "execute",
+            "validate",
+            "solidify",
+        ]
         self.current_stage = "think"
         self.visit_count = {stage: 0 for stage in self.stages}
         self.total_cost = 0.0
@@ -531,6 +567,7 @@ class CAKEStateMachine(RuleBasedStateMachine):
 # Performance Tests
 class TestPerformance:
     """Performance and load tests."""
+
     @pytest.mark.asyncio
     async def test_rule_matching_performance(self, persistence_layer):
         """Test rule matching performance with many rules."""
@@ -557,7 +594,9 @@ class TestPerformance:
 
             start = time.time()
             for _ in range(100):
-                await rule_repo.find_matching_rule("execute", "Some error with pattern_500")
+                await rule_repo.find_matching_rule(
+                    "execute", "Some error with pattern_500"
+                )
 
             duration = time.time() - start
             avg_time_ms = (duration / 100) * 1000

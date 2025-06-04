@@ -21,6 +21,7 @@ from workflow.extraction.conversation_parser import (
 class TestConversationParser:
     """
     Test the ConversationParser class."""
+
     @pytest.fixture
     def parser(self):
         """Create a parser instance."""
@@ -136,10 +137,14 @@ I've implemented comprehensive tests in `tests/unit/test_conversation_parser.py`
 
         # The actual implementation doesn't use _extract_decision_from_sentence
         # Instead it extracts decisions through pattern matching in _extract_assistant_content
-        parser._extract_assistant_content(turn, mock_doc, context, current_tasks, current_problems)
+        parser._extract_assistant_content(
+            turn, mock_doc, context, current_tasks, current_problems
+        )
 
         # With our improved parser, this should extract a decision
-        assert len(context.decisions) >= 0  # May or may not extract depending on implementation
+        assert (
+            len(context.decisions) >= 0
+        )  # May or may not extract depending on implementation
 
     def test_extract_files_and_commands(self, parser):
         """Test extraction of file paths and commands."""
@@ -182,7 +187,9 @@ Run the following:
 
         # Process problem
         turn_problem = ConversationTurn(
-            speaker="assistant", content="encountering an import error with spacy", turn_number=2
+            speaker="assistant",
+            content="encountering an import error with spacy",
+            turn_number=2,
         )
         parser._extract_assistant_content(
             turn_problem, mock_doc_problem, context, current_tasks, current_problems
@@ -247,7 +254,9 @@ I'll create a test for you.
             implemented=True,
         )
 
-        task2 = ExtractedTask(text="fix bug", context="fix bug", speaker="human", implemented=False)
+        task2 = ExtractedTask(
+            text="fix bug", context="fix bug", speaker="human", implemented=False
+        )
 
         context.tasks = [task1, task2]
 
@@ -289,7 +298,9 @@ I'll create a test for you.
         )
         context.tasks.append(task)
 
-        decision = ExtractedDecision(text="use spacy", rationale="deterministic", confidence=0.9)
+        decision = ExtractedDecision(
+            text="use spacy", rationale="deterministic", confidence=0.9
+        )
         context.decisions.append(decision)
 
         json_output = parser.to_json(context)
@@ -397,9 +408,13 @@ Message {i*2+1}: I'll help you with task {i}. Created file{i}.py.
 
         # Add implementation
         turn2 = ConversationTurn(
-            speaker="assistant", content="I've created the parser component", turn_number=1
+            speaker="assistant",
+            content="I've created the parser component",
+            turn_number=1,
         )
-        parser._extract_implementation_reference = Mock(return_value="the parser component")
+        parser._extract_implementation_reference = Mock(
+            return_value="the parser component"
+        )
         parser._is_related = Mock(return_value=True)
         parser._extract_assistant_content(
             turn2, mock_doc2, context, current_tasks, current_problems

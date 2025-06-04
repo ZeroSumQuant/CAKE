@@ -97,7 +97,11 @@ class DustinVoiceValidator:
         score = max(0, min(100, score))
 
         return VoiceCheckResult(
-            message=message, score=score, passed=score >= 90, issues=issues, suggestions=suggestions
+            message=message,
+            score=score,
+            passed=score >= 90,
+            issues=issues,
+            suggestions=suggestions,
         )
 
     def _check_format_and_update_score(
@@ -128,11 +132,15 @@ class DustinVoiceValidator:
         """Check sentence count and update score."""
         sentences = message.count(".")
         if sentences > self.MAX_SENTENCES:
-            issues.append(f"Too many sentences ({sentences}). Max: {self.MAX_SENTENCES}")
+            issues.append(
+                f"Too many sentences ({sentences}). Max: {self.MAX_SENTENCES}"
+            )
             score -= 15
         return score
 
-    def _check_verbs_and_update_score(self, message: str, issues: List[str], score: float) -> float:
+    def _check_verbs_and_update_score(
+        self, message: str, issues: List[str], score: float
+    ) -> float:
         """Check approved verbs and update score."""
         verb_score = self._check_verbs(message)
         if verb_score < 100:
@@ -214,11 +222,17 @@ class DustinVoiceValidator:
 
             # Identify likely action
             if "test" in content.lower():
-                suggestions.append("Operator (CAKE): Stop. Run pytest. See test results.")
+                suggestions.append(
+                    "Operator (CAKE): Stop. Run pytest. See test results."
+                )
             elif "error" in content.lower():
-                suggestions.append("Operator (CAKE): Stop. Check error output. Fix import.")
+                suggestions.append(
+                    "Operator (CAKE): Stop. Check error output. Fix import."
+                )
             elif "install" in content.lower():
-                suggestions.append("Operator (CAKE): Stop. Run pip install. Check requirements.")
+                suggestions.append(
+                    "Operator (CAKE): Stop. Run pip install. Check requirements."
+                )
             else:
                 suggestions.append("Operator (CAKE): Stop. Check issue. Try solution.")
 
@@ -246,7 +260,9 @@ Voice Requirements:
     )
 
     parser.add_argument("--message", "-m", help="Single message to validate")
-    parser.add_argument("--file", "-f", type=Path, help="File containing messages (one per line)")
+    parser.add_argument(
+        "--file", "-f", type=Path, help="File containing messages (one per line)"
+    )
     parser.add_argument(
         "--interactive",
         "-i",
@@ -254,7 +270,9 @@ Voice Requirements:
         help="Interactive mode - enter messages to check",
     )
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed analysis")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Show detailed analysis"
+    )
 
     return parser
 
@@ -267,7 +285,9 @@ def _process_single_message(
     return [result]
 
 
-def _process_file(validator: DustinVoiceValidator, file_path: Path) -> List[VoiceCheckResult]:
+def _process_file(
+    validator: DustinVoiceValidator, file_path: Path
+) -> List[VoiceCheckResult]:
     """Process messages from a file."""
     if not file_path.exists():
         print(f"Error: File not found: {file_path}")
@@ -300,7 +320,9 @@ def _run_interactive_mode(validator: DustinVoiceValidator, verbose: bool) -> Non
         print("\n\nExiting...")
 
 
-def _output_results(results: List[VoiceCheckResult], as_json: bool, verbose: bool) -> None:
+def _output_results(
+    results: List[VoiceCheckResult], as_json: bool, verbose: bool
+) -> None:
     """Output results in the requested format."""
     if not results:
         return

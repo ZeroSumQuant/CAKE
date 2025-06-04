@@ -145,7 +145,9 @@ def create_monitoring_hook():
         if tool_name == "Bash" and "command" in params:
             intervention = monitor.check_command(params["command"])
             if intervention:
-                intervention_msg = f"\n{intervention.message}\n{intervention.suggestion}\n"
+                intervention_msg = (
+                    f"\n{intervention.message}\n{intervention.suggestion}\n"
+                )
 
         # Check for hidden file issues
         if tool_name == "LS" and "path" in params:

@@ -91,11 +91,14 @@ This file will auto-delete after you read it.
         """Monitor for problematic file creation patterns."""
         # Check for multiple fix scripts created recently
         fix_scripts = list(self.watch_dir.glob("fix_*.py"))
-        recent_scripts = [f for f in fix_scripts if f.stat().st_mtime > self.last_check.timestamp()]
+        recent_scripts = [
+            f for f in fix_scripts if f.stat().st_mtime > self.last_check.timestamp()
+        ]
 
         if len(recent_scripts) >= 3:
             self.create_intervention(
-                "multiple_fix_scripts", f"Found {len(recent_scripts)} fix scripts created"
+                "multiple_fix_scripts",
+                f"Found {len(recent_scripts)} fix scripts created",
             )
 
     def monitor_commands(self):
@@ -117,7 +120,9 @@ This file will auto-delete after you read it.
                     for pattern_name, pattern_info in self.patterns.items():
                         if pattern_info["check"] == "command":
                             if re.search(pattern_info["pattern"], cmd):
-                                self.create_intervention(pattern_name, f"Command: {cmd}")
+                                self.create_intervention(
+                                    pattern_name, f"Command: {cmd}"
+                                )
                                 return
         except Exception as e:
             self._log(f"Error monitoring commands: {e}")
@@ -126,7 +131,9 @@ This file will auto-delete after you read it.
         """Monitor for error patterns in recent output files."""
         # Check recent log files for error patterns
         log_files = list(self.watch_dir.glob("**/*.log"))
-        recent_logs = [f for f in log_files if f.stat().st_mtime > self.last_check.timestamp()]
+        recent_logs = [
+            f for f in log_files if f.stat().st_mtime > self.last_check.timestamp()
+        ]
 
         for log_file in recent_logs:
             try:
@@ -136,7 +143,9 @@ This file will auto-delete after you read it.
                 for pattern_name, pattern_info in self.patterns.items():
                     if pattern_info["check"] == "error":
                         if re.search(pattern_info["pattern"], content):
-                            self.create_intervention(pattern_name, f"Found in {log_file.name}")
+                            self.create_intervention(
+                                pattern_name, f"Found in {log_file.name}"
+                            )
                             return
             except:
                 pass

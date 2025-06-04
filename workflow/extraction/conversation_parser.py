@@ -328,7 +328,9 @@ class ConversationParser:
         logger.info(f"Parsed {len(turns)} conversation turns")
 
         # Initialize context
-        context = ConversationContext(message_count=len(turns), conversation_hash=conversation_hash)
+        context = ConversationContext(
+            message_count=len(turns), conversation_hash=conversation_hash
+        )
 
         # Track conversation state
         current_tasks = {}  # task_id -> ExtractedTask
@@ -345,10 +347,14 @@ class ConversationParser:
             if turn.speaker == "human":
                 self._extract_human_content(turn, doc, context, current_tasks)
             else:  # assistant
-                self._extract_assistant_content(turn, doc, context, current_tasks, current_problems)
+                self._extract_assistant_content(
+                    turn, doc, context, current_tasks, current_problems
+                )
 
             # Extract files and commands regardless of speaker
-            self._extract_files_and_commands(turn.content, file_mentions, command_mentions)
+            self._extract_files_and_commands(
+                turn.content, file_mentions, command_mentions
+            )
 
             # Extract insights from original content (not lowercased)
             self._extract_insights(turn.content, doc, context)
@@ -419,7 +425,12 @@ class ConversationParser:
 
             elif any(
                 marker in line
-                for marker in ["## 🤖 Assistant", "## 🤖 Claude", "Assistant:", "**Assistant**"]
+                for marker in [
+                    "## 🤖 Assistant",
+                    "## 🤖 Claude",
+                    "Assistant:",
+                    "**Assistant**",
+                ]
             ):
                 # Save previous turn
                 if current_speaker and current_content:
@@ -475,7 +486,9 @@ class ConversationParser:
         original_content = turn.content
 
         # Split into sentences
-        sentences = [s.strip() for s in re.split(r"[.!?]+", original_content) if s.strip()]
+        sentences = [
+            s.strip() for s in re.split(r"[.!?]+", original_content) if s.strip()
+        ]
 
         for sent_text in sentences:
             sent_lower = sent_text.lower()
@@ -486,7 +499,10 @@ class ConversationParser:
                 task_desc = self._extract_task_description(sent_text)
                 if task_desc:
                     task = ExtractedTask(
-                        text=task_desc, context=sent_text, speaker="human", timestamp=turn.timestamp
+                        text=task_desc,
+                        context=sent_text,
+                        speaker="human",
+                        timestamp=turn.timestamp,
                     )
 
                     # Generate task ID for tracking
@@ -517,7 +533,10 @@ class ConversationParser:
             for match in matches:
                 match_lower = match.lower()
                 # Check if this is a decision or implementation
-                if any(ind in match_lower for ind in ["implemented", "created", "built", "fixed"]):
+                if any(
+                    ind in match_lower
+                    for ind in ["implemented", "created", "built", "fixed"]
+                ):
                     # This is likely an implementation summary
                     # Find related tasks
                     for task in context.tasks:
@@ -525,7 +544,10 @@ class ConversationParser:
                             task.implemented = True
                             task.implementation_ref = match
                             break
-                elif any(ind in match_lower for ind in ["decided", "chose", "selected", "using"]):
+                elif any(
+                    ind in match_lower
+                    for ind in ["decided", "chose", "selected", "using"]
+                ):
                     # This is likely a decision
                     decision = ExtractedDecision(
                         text=match,
@@ -543,7 +565,14 @@ class ConversationParser:
             # Check if this describes a completed action
             if any(
                 ind in item_lower
-                for ind in ["created", "implemented", "added", "updated", "fixed", "moved"]
+                for ind in [
+                    "created",
+                    "implemented",
+                    "added",
+                    "updated",
+                    "fixed",
+                    "moved",
+                ]
             ):
                 # Try to match with tasks
                 for task in context.tasks:
@@ -586,7 +615,9 @@ class ConversationParser:
         for pattern in error_patterns:
             matches = re.findall(pattern, original_content, re.IGNORECASE)
             for match in matches:
-                if not any(skip in match.lower() for skip in ["no error", "fixed", "resolved"]):
+                if not any(
+                    skip in match.lower() for skip in ["no error", "fixed", "resolved"]
+                ):
                     context.errors_encountered.append(match)
 
     def _extract_files_and_commands(
@@ -605,7 +636,9 @@ class ConversationParser:
             matches = re.findall(pattern, content, re.I)
             for match in matches:
                 # Validate file extension
-                if any(match.endswith(ext) for ext in self.cake_patterns["file_extensions"]):
+                if any(
+                    match.endswith(ext) for ext in self.cake_patterns["file_extensions"]
+                ):
                     file_mentions.add(match)
 
         # Extract commands
@@ -617,7 +650,9 @@ class ConversationParser:
             lines = block.strip().split("\n")
             for line in lines:
                 line = line.strip()
-                if line and any(script in line for script in self.cake_patterns["cake_scripts"]):
+                if line and any(
+                    script in line for script in self.cake_patterns["cake_scripts"]
+                ):
                     command_mentions.add(line)
 
         # Also extract inline commands
@@ -629,10 +664,14 @@ class ConversationParser:
         for pattern in inline_patterns:
             matches = re.findall(pattern, content)
             for match in matches:
-                if any(script in match for script in self.cake_patterns["cake_scripts"]):
+                if any(
+                    script in match for script in self.cake_patterns["cake_scripts"]
+                ):
                     command_mentions.add(match.strip())
 
-    def _extract_insights(self, content: str, doc: Doc, context: ConversationContext) -> None:
+    def _extract_insights(
+        self, content: str, doc: Doc, context: ConversationContext
+    ) -> None:
         """Extract key insights from content."""
         # Look for key insights in various formats
         insight_patterns = [
@@ -651,7 +690,9 @@ class ConversationParser:
 
         # Also look for insights in bullet points that start with key words
         bullet_pattern = r"^\s*[-*+•]\s+((?:key|important|note|benefit|advantage).+?)$"
-        bullet_insights = re.findall(bullet_pattern, content, re.IGNORECASE | re.MULTILINE)
+        bullet_insights = re.findall(
+            bullet_pattern, content, re.IGNORECASE | re.MULTILINE
+        )
         for insight in bullet_insights:
             if 20 < len(insight) < 300:
                 context.key_insights.append(insight)
@@ -791,7 +832,9 @@ class ConversationParser:
         rationale = ""
 
         # Check nearby lines
-        for i in range(max(0, decision_line_idx - 2), min(len(lines), decision_line_idx + 3)):
+        for i in range(
+            max(0, decision_line_idx - 2), min(len(lines), decision_line_idx + 3)
+        ):
             line = lines[i].lower()
             if any(indicator in line for indicator in rationale_indicators):
                 rationale = lines[i]
@@ -924,7 +967,9 @@ class ConversationParser:
             ]
             if not any(pattern in error_lower for pattern in skip_patterns):
                 # Check if it actually describes an error that occurred
-                if any(ind in error_lower for ind in ["traceback", "exception", "failed"]):
+                if any(
+                    ind in error_lower for ind in ["traceback", "exception", "failed"]
+                ):
                     real_errors.append(error)
 
         context.errors_encountered = real_errors
@@ -1000,7 +1045,9 @@ def main():
     parser.add_argument(
         "-o", "--output", help="Output JSON file", default="conversation_context.json"
     )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
+    )
 
     args = parser.parse_args()
 
