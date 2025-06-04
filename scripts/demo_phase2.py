@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Demo Phase 2 transformations without shell prompts."""
 
-import itertools
 import os
 import re
 import subprocess

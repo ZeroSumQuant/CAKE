@@ -88,6 +88,10 @@ bandit-report.json
 *-report.txt
 *-output.txt
 
+# Development test files
+test_phase*_demo*.py
+cleanup_reports/
+
 # Security - NEVER commit these
 .env
 .env.*
