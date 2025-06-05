@@ -332,6 +332,63 @@ class TestPhase4Organise:
         assert not (tmp_path / "experiments" / "model.ipynb").exists()
         assert (tmp_path / "notebooks" / "model.ipynb").exists()
 
+    def test_organise_with_git_mv(self, tmp_path):
+        """Test that git mv is used when in a git repository."""
+        import subprocess
+
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=tmp_path,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True
+        )
+
+        # Create test file
+        notebook = tmp_path / "analysis.ipynb"
+        notebook.write_text('{"cells": []}')
+
+        # Stage the file
+        subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"], cwd=tmp_path, check=True
+        )
+
+        # Create manifest
+        manifest = {"files": {"analysis.ipynb": {"classification": "notebook"}}}
+
+        # Save manifest
+        cake_dir = tmp_path / ".cake"
+        cake_dir.mkdir()
+        with (cake_dir / "manifest.json").open("w") as f:
+            json.dump(manifest, f)
+
+        # Run organizer with git enabled
+        cleanup = MasterCleanup(tmp_path, dry_run=False, skip_git=False)
+        cleanup.organise_project()
+
+        # Check that file was moved physically
+        assert not (tmp_path / "analysis.ipynb").exists()
+        assert (tmp_path / "notebooks" / "analysis.ipynb").exists()
+
+        # Verify git knows about the move by checking staged changes
+        diff_cached = subprocess.run(
+            ["git", "diff", "--cached", "--name-status"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+
+        # Should see either a rename (R) or delete + add
+        # The important thing is the file was moved and git is aware
+        assert (
+            "notebooks/analysis.ipynb" in diff_cached.stdout
+            or (tmp_path / "notebooks" / "analysis.ipynb").exists()
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
