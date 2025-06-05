@@ -1,0 +1,92 @@
+cake/adapters/cake_integration.py:175:101: E501 line too long (110 > 100 characters)
+cake/adapters/cake_integration.py:180:101: E501 line too long (112 > 100 characters)
+cake/adapters/cake_integration.py:253:101: E501 line too long (116 > 100 characters)
+cake/adapters/cake_integration.py:288:101: E501 line too long (106 > 100 characters)
+cake/adapters/cake_integration.py:303:1: C901 'main' is too complex (11)
+cake/adapters/cake_integration.py:395:23: F541 f-string is missing placeholders
+cake/adapters/claude_orchestration.py:201:19: W291 trailing whitespace
+cake/adapters/claude_orchestration.py:215:70: W291 trailing whitespace
+cake/adapters/claude_orchestration.py:248:101: E501 line too long (109 > 100 characters)
+cake/adapters/claude_orchestration.py:1065:101: E501 line too long (113 > 100 characters)
+cake/adapters/claude_orchestration.py:1203:101: E501 line too long (111 > 100 characters)
+cake/adapters/claude_orchestration.py:1230:101: E501 line too long (112 > 100 characters)
+cake/adapters/claude_orchestration.py:1403:101: E501 line too long (101 > 100 characters)
+cake/adapters/claude_orchestration.py:1675:101: E501 line too long (128 > 100 characters)
+cake/adapters/claude_orchestration.py:1741:5: F811 redefinition of unused 'asyncio' from line 12
+cake/adapters/claude_orchestration.py:1756:101: E501 line too long (102 > 100 characters)
+cake/adapters/claude_orchestration.py:1801:101: E501 line too long (173 > 100 characters)
+cake/adapters/claude_orchestration.py:1807:1: W293 blank line contains whitespace
+cake/components/adaptive_confidence_engine.py:150:101: E501 line too long (104 > 100 characters)
+cake/components/adaptive_confidence_engine.py:172:35: E226 missing whitespace around arithmetic operator
+cake/components/adaptive_confidence_engine.py:174:38: E226 missing whitespace around arithmetic operator
+cake/components/adaptive_confidence_engine.py:247:101: E501 line too long (117 > 100 characters)
+cake/components/adaptive_confidence_engine.py:570:44: W291 trailing whitespace
+cake/components/adaptive_confidence_engine.py:756:42: W291 trailing whitespace
+cake/components/adaptive_confidence_engine.py:757:77: W291 trailing whitespace
+cake/components/adaptive_confidence_engine.py:758:78: W291 trailing whitespace
+cake/components/adaptive_confidence_engine.py:919:5: F401 'asyncio' imported but unused
+cake/components/adaptive_confidence_engine.py:966:32: E226 missing whitespace around arithmetic operator
+cake/components/adaptive_confidence_engine.py:981:42: E226 missing whitespace around arithmetic operator
+cake/components/operator.py:179:5: C901 'OperatorBuilder._build_template_variables' is too complex (11)
+cake/components/semantic_error_classifier.py:25:1: F401 'networkx as nx' imported but unused
+cake/components/semantic_error_classifier.py:26:1: F401 'numpy as np' imported but unused
+cake/components/semantic_error_classifier.py:428:101: E501 line too long (331 > 100 characters)
+cake/components/semantic_error_classifier.py:979:35: F821 undefined name 'statistics'
+cake/components/semantic_error_classifier.py:1012:101: E501 line too long (102 > 100 characters)
+cake/components/semantic_error_classifier.py:1118:5: C901 'SemanticErrorClassifier._infer_category_and_severity' is too complex (15)
+cake/components/semantic_error_classifier.py:1531:101: E501 line too long (111 > 100 characters)
+cake/components/semantic_error_classifier.py:1575:101: E501 line too long (127 > 100 characters)
+cake/components/snapshot_manager.py:15:1: F401 'os' imported but unused
+cake/components/snapshot_manager.py:17:1: F401 'tempfile' imported but unused
+cake/components/snapshot_manager.py:21:1: F401 'typing.Tuple' imported but unused
+cake/components/snapshot_manager.py:61:13: F841 local variable 'result' is assigned to but never used
+cake/components/validator.py:437:1: W293 blank line contains whitespace
+cake/components/validator.py:443:1: W293 blank line contains whitespace
+cake/components/validator.py:831:101: E501 line too long (115 > 100 characters)
+cake/components/validator.py:874:1: W293 blank line contains whitespace
+cake/components/validator.py:876:1: W293 blank line contains whitespace
+cake/components/validator.py:883:1: W293 blank line contains whitespace
+cake/components/validator.py:891:1: W293 blank line contains whitespace
+cake/components/validator.py:914:15: F541 f-string is missing placeholders
+cake/components/validator.py:918:15: F541 f-string is missing placeholders
+cake/components/voice_similarity_gate.py:13:1: F401 'typing.Dict' imported but unused
+cake/components/voice_similarity_gate.py:13:1: F401 'typing.Tuple' imported but unused
+cake/components/voice_similarity_gate.py:358:101: E501 line too long (166 > 100 characters)
+cake/core/stage_router.py:201:5: C901 'StageRouter.next_stage' is too complex (12)
+cake/core/watchdog.py:96:5: C901 'Watchdog.monitor_stream' is too complex (18)
+cake/utils/cross_task_knowledge_ledger.py:443:101: E501 line too long (102 > 100 characters)
+cake/utils/cross_task_knowledge_ledger.py:717:101: E501 line too long (114 > 100 characters)
+cake/utils/cross_task_knowledge_ledger.py:740:101: E501 line too long (107 > 100 characters)
+cake/utils/cross_task_knowledge_ledger.py:779:101: E501 line too long (103 > 100 characters)
+cake/utils/cross_task_knowledge_ledger.py:1107:101: E501 line too long (104 > 100 characters)
+cake/utils/cross_task_knowledge_ledger.py:1274:101: E501 line too long (102 > 100 characters)
+cake/utils/cross_task_knowledge_ledger.py:1281:57: W291 trailing whitespace
+cake/utils/cross_task_knowledge_ledger.py:1325:45: W291 trailing whitespace
+cake/utils/cross_task_knowledge_ledger.py:1342:56: W291 trailing whitespace
+cake/utils/cross_task_knowledge_ledger.py:1372:101: E501 line too long (128 > 100 characters)
+cake/utils/cross_task_knowledge_ledger.py:1493:79: W291 trailing whitespace
+cake/utils/cross_task_knowledge_ledger.py:1494:35: W291 trailing whitespace
+cake/utils/cross_task_knowledge_ledger.py:1495:38: W291 trailing whitespace
+cake/utils/cross_task_knowledge_ledger.py:1518:35: W291 trailing whitespace
+cake/utils/cross_task_knowledge_ledger.py:1542:42: W291 trailing whitespace
+cake/utils/cross_task_knowledge_ledger.py:1629:20: W291 trailing whitespace
+cake/utils/cross_task_knowledge_ledger.py:1690:19: F541 f-string is missing placeholders
+cake/utils/info_fetcher.py:221:9: F841 local variable 'search_url' is assigned to but never used
+cake/utils/info_fetcher.py:692:27: E226 missing whitespace around arithmetic operator
+cake/utils/models.py:17:1: C901 'TryExcept 17' is too complex (13)
+cake/utils/models.py:25:5: F811 redefinition of unused 'Any' from line 14
+cake/utils/rate_limiter.py:48:5: F401 'opentelemetry.sdk.metrics.export.PeriodicExportingMetricReader' imported but unused
+cake/utils/rate_limiter.py:165:1: W293 blank line contains whitespace
+cake/utils/rate_limiter.py:169:1: W293 blank line contains whitespace
+cake/utils/rate_limiter.py:174:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:427:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:432:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:435:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:440:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:488:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:494:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:500:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:507:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:516:1: W293 blank line contains whitespace
+cake/utils/rule_creator.py:544:17: F402 import 'field' from line 17 shadowed by loop variable
+cake/utils/rule_creator.py:812:101: E501 line too long (109 > 100 characters)
