@@ -1681,6 +1681,26 @@ class MasterCleanup:
 
         self.log(f"  ✓ Organization complete: {moved} moved, {skipped} skipped")
 
+    # ─────────────────── Phase 4 ─ Scaffold ────────────────────
+    def write_pyproject(self) -> None:
+        """Create a minimal pyproject.toml if one does not exist."""
+        pyproj = self.target_path / "pyproject.toml"
+        if pyproj.exists():
+            return
+
+        name = self.target_path.name.lower().replace(" ", "-")
+        tmpl = (
+            "[project]\n"
+            f'name = "{name}"\n'
+            'version = "0.0.0"\n'
+            'authors = ["Unknown <user@example.com>"]\n'
+            'description = ""\n'
+            'requires-python = ">=3.8"\n'
+        )
+        pyproj.write_text(tmpl)
+        self.log(f"  ✓ Created pyproject.toml for project '{name}'")
+        self.summary["scaffold_pyproject"] = str(pyproj)
+
     def run(self) -> None:
         """Execute all phases in order."""
         # Check branch safety
@@ -1733,6 +1753,7 @@ class MasterCleanup:
             ("run_isort", self.run_isort),
             ("build_manifest", self.build_manifest),
             ("organise_project", self.organise_project),
+            ("write_pyproject", self.write_pyproject),
         ]
 
         # Execute phases
