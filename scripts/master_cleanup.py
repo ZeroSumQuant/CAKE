@@ -1639,7 +1639,11 @@ class MasterCleanup:
                 target.parent.mkdir(parents=True, exist_ok=True)
 
                 # Move the file
-                if not self.skip_git:
+                if self.skip_git or not (self.target_path / ".git").exists():
+                    # Use regular move if skip_git is True or not in a git repo
+                    shutil.move(str(source), str(target))
+                else:
+                    # Use git mv when in a git repository
                     result = self.safe_run(
                         ["git", "mv", str(source), str(target)],
                         capture_output=True,
@@ -1647,9 +1651,8 @@ class MasterCleanup:
                     )
                     if result.returncode != 0:
                         # Fall back to regular move if git mv fails
+                        self.log("  ⚠️  git mv failed, using shutil.move")
                         shutil.move(str(source), str(target))
-                else:
-                    shutil.move(str(source), str(target))
 
                 self.log(f"  ✓ Moved {src_rel} → {tgt_rel}")
                 moved += 1
