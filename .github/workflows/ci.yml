@@ -152,7 +152,7 @@ jobs:
     - name: Check documentation
       run: |
         echo "Checking for required documentation files..."
-        for file in README.md CLAUDE.md; do
+        for file in README.md docs/CLAUDE.md; do
           if [ ! -f "$file" ]; then
             echo "ERROR: Required file $file is missing!"
             exit 1
