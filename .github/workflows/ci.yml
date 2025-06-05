@@ -207,7 +207,7 @@ jobs:
     - name: Run Icing tests
       working-directory: icing
       run: |
-        pytest -q tests -v --cov=icing --cov-report=term-missing
+        pytest -q tests
     
     - name: Test Icing CLI
       run: |
