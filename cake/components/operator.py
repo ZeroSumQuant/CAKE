@@ -88,7 +88,8 @@ class OperatorBuilder:
             "Required: {required_coverage}%. Add tests for: {uncovered_files}"
         ),
         InterventionType.FORCE_PUSH: (
-            "Stop. No force pushing with failing CI. " "Status: {ci_status}. Fix it properly."
+            "Stop. No force pushing with failing CI. "
+            "Status: {ci_status}. Fix it properly."
         ),
         InterventionType.UNSAFE_OPERATION: (
             "Stop. Command '{command}' is unsafe. " "{reason}. Use: {safe_alternative}"
@@ -170,9 +171,7 @@ class OperatorBuilder:
 
         # Add escalation if repeated interventions
         if self._should_escalate():
-            message += (
-                "\n\nOperator (CAKE): Multiple interventions triggered. Consider taking a break."
-            )
+            message += "\n\nOperator (CAKE): Multiple interventions triggered. Consider taking a break."
 
         return message
 
@@ -247,7 +246,9 @@ class OperatorBuilder:
 
         # Format failing tests list
         if len(failing_tests) > 3:
-            test_list = ", ".join(failing_tests[:3]) + f" and {len(failing_tests) - 3} more"
+            test_list = (
+                ", ".join(failing_tests[:3]) + f" and {len(failing_tests) - 3} more"
+            )
         else:
             test_list = ", ".join(failing_tests) if failing_tests else "multiple tests"
 
@@ -380,8 +381,12 @@ class OperatorBuilder:
 
         return {
             "pattern_name": pattern,
-            "previous_project": error_details.get("previous_project", "a previous project"),
-            "correct_approach": pattern_corrections.get(pattern, "Follow best practices"),
+            "previous_project": error_details.get(
+                "previous_project", "a previous project"
+            ),
+            "correct_approach": pattern_corrections.get(
+                pattern, "Follow best practices"
+            ),
         }
 
     def _build_focus_drift_vars(self, context: InterventionContext) -> Dict[str, Any]:
@@ -585,7 +590,9 @@ class InterventionAnalyzer:
                 current_action=state.get("action"),
                 task_context={
                     "changed_files": code_changes,
-                    "min_coverage": state.get("project_config", {}).get("min_coverage", 90),
+                    "min_coverage": state.get("project_config", {}).get(
+                        "min_coverage", 90
+                    ),
                 },
             )
 
@@ -685,7 +692,9 @@ class InterventionAnalyzer:
                     current_action="coding",
                     error_details={
                         "pattern_name": pattern_name,
-                        "previous_project": (previous[0]["project"] if previous else None),
+                        "previous_project": (
+                            previous[0]["project"] if previous else None
+                        ),
                     },
                 )
 

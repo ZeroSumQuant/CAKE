@@ -119,8 +119,12 @@ class RuleValidator:
 
     def __init__(self):
         """Initialize validator with compiled patterns."""
-        self.expr_patterns = [re.compile(p, re.IGNORECASE) for p in self.DANGEROUS_EXPR_PATTERNS]
-        self.cmd_patterns = [re.compile(p, re.IGNORECASE) for p in self.DANGEROUS_CMD_PATTERNS]
+        self.expr_patterns = [
+            re.compile(p, re.IGNORECASE) for p in self.DANGEROUS_EXPR_PATTERNS
+        ]
+        self.cmd_patterns = [
+            re.compile(p, re.IGNORECASE) for p in self.DANGEROUS_CMD_PATTERNS
+        ]
 
     def validate_proposal(self, proposal: RuleProposal) -> Tuple[bool, List[str]]:
         """
@@ -457,7 +461,9 @@ class RuleCreator:
                     proposal.check_expression = new_check
 
             # Add test cases
-            for match in re.finditer(r"TEST_CASE:\s*([^,]+),\s*([^,]+),\s*(true|false)", content):
+            for match in re.finditer(
+                r"TEST_CASE:\s*([^,]+),\s*([^,]+),\s*(true|false)", content
+            ):
                 proposal.test_cases.append(
                     {
                         "stage": match.group(1).strip(),
@@ -470,7 +476,9 @@ class RuleCreator:
             if match := re.search(r"WARNING:\s*(.+)", content):
                 warning = match.group(1).strip()
                 if warning.lower() != "none":
-                    proposal.metadata["warnings"] = proposal.metadata.get("warnings", [])
+                    proposal.metadata["warnings"] = proposal.metadata.get(
+                        "warnings", []
+                    )
                     proposal.metadata["warnings"].append(warning)
 
             return proposal
@@ -479,7 +487,9 @@ class RuleCreator:
             logger.warning(f"Enhancement failed: {e}")
             return proposal
 
-    def _build_generation_prompt(self, stage: str, error: str, context: Dict[str, Any]) -> str:
+    def _build_generation_prompt(
+        self, stage: str, error: str, context: Dict[str, Any]
+    ) -> str:
         """Build prompt for Claude rule generation."""  # Get safe commands list
         safe_commands = "\n".join(f"- {cmd}" for cmd in self.validator.SAFE_COMMANDS)
 
@@ -563,7 +573,11 @@ class RuleCreator:
                 test_cases=[
                     {
                         "stage": stage,
-                        "error": (test_case_match.group(1).strip() if test_case_match else error),
+                        "error": (
+                            test_case_match.group(1).strip()
+                            if test_case_match
+                            else error
+                        ),
                         "should_match": True,
                     }
                 ],
@@ -605,7 +619,9 @@ class RuleCreator:
 
         return True
 
-    def _generate_signature(self, stage: str, error_type: str, error_detail: str) -> str:
+    def _generate_signature(
+        self, stage: str, error_type: str, error_detail: str
+    ) -> str:
         """Generate unique signature for a rule."""  # Create deterministic signature
         detail_hash = hashlib.md5(error_detail.encode()).hexdigest()[:8]
         return f"{stage}:{error_type}:{detail_hash}"
@@ -681,7 +697,9 @@ class RuleCreator:
 
             except Exception as e:
                 results["failed"] += 1
-                results["details"].append({"test": test_case, "error": str(e), "passed": False})
+                results["details"].append(
+                    {"test": test_case, "error": str(e), "passed": False}
+                )
 
         return results
 
@@ -704,12 +722,14 @@ class RuleCreator:
         return {
             "total_proposals": len(self.proposal_cache),
             "average_confidence": (
-                sum(p.confidence for p in self.proposal_cache.values()) / len(self.proposal_cache)
+                sum(p.confidence for p in self.proposal_cache.values())
+                / len(self.proposal_cache)
                 if self.proposal_cache
                 else 0
             ),
             "average_safety_score": (
-                sum(p.safety_score for p in self.proposal_cache.values()) / len(self.proposal_cache)
+                sum(p.safety_score for p in self.proposal_cache.values())
+                / len(self.proposal_cache)
                 if self.proposal_cache
                 else 0
             ),

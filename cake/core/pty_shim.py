@@ -216,7 +216,9 @@ class PTYShim:
                     filtered_data = self._filter_input(data, command_buffer)
                     if filtered_data is not None:
                         os.write(master_fd, filtered_data)
-                        command_buffer = self._update_command_buffer(command_buffer, data)
+                        command_buffer = self._update_command_buffer(
+                            command_buffer, data
+                        )
 
                 if master_fd in r:
                     # Read from child process
@@ -293,7 +295,9 @@ class PTYShim:
     def _requires_confirmation(self, command: str) -> bool:
         """Check if command requires confirmation."""
         command_lower = command.lower()
-        return any(pattern in command_lower for pattern in self.policy.require_confirmation)
+        return any(
+            pattern in command_lower for pattern in self.policy.require_confirmation
+        )
 
     def _get_confirmation(self, command: str) -> bool:
         """Get user confirmation for dangerous command."""
@@ -352,7 +356,9 @@ class PTYShimIntegration:
         import asyncio
 
         loop = asyncio.new_event_loop()
-        intervention = loop.run_until_complete(self.cake_adapter.process_claude_action(action))
+        intervention = loop.run_until_complete(
+            self.cake_adapter.process_claude_action(action)
+        )
         loop.close()
 
         return intervention
@@ -387,7 +393,9 @@ def cake_exec(command: List[str], cake_adapter=None) -> subprocess.CompletedProc
     # Check blocked patterns
     for pattern in policy.blocked_patterns:
         if re.search(pattern, full_command, re.IGNORECASE):
-            raise PermissionError(f"Command blocked by CAKE: matches pattern '{pattern}'")
+            raise PermissionError(
+                f"Command blocked by CAKE: matches pattern '{pattern}'"
+            )
 
     # Check allowlist
     allowed = False

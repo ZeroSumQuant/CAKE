@@ -713,7 +713,10 @@ Reflect on the current state:
             score += 0.15
 
         # Knowledge availability
-        if context.knowledge_retrieved and "knowledge" in template.template_text.lower():
+        if (
+            context.knowledge_retrieved
+            and "knowledge" in template.template_text.lower()
+        ):
             score += 0.1
 
         return min(1.0, score)
@@ -733,8 +736,12 @@ Reflect on the current state:
                         template_id=template_data["template_id"],
                         prompt_type=PromptType[template_data["prompt_type"]],
                         template_text=template_data["template_text"],
-                        required_variables=set(template_data.get("required_variables", [])),
-                        optional_variables=set(template_data.get("optional_variables", [])),
+                        required_variables=set(
+                            template_data.get("required_variables", [])
+                        ),
+                        optional_variables=set(
+                            template_data.get("optional_variables", [])
+                        ),
                         version=template_data.get("version", "1.0"),
                     )
                     self.add_template(template)
@@ -800,14 +807,17 @@ class ContextEnhancer:
 
         enhanced = {
             "error_message": context.error_context.get("error", "No error message"),
-            "error_classification": self._format_error_classification(error_classification),
+            "error_classification": self._format_error_classification(
+                error_classification
+            ),
             "previous_attempts_count": len(context.previous_attempts),
         }
 
         # Add error-specific context
         if context.previous_attempts:
             failed_approaches = [
-                attempt.get("approach", "unknown") for attempt in context.previous_attempts
+                attempt.get("approach", "unknown")
+                for attempt in context.previous_attempts
             ]
             enhanced["failed_approaches"] = ", ".join(set(failed_approaches))
 
@@ -830,7 +840,9 @@ class ContextEnhancer:
 
         return {
             "knowledge_context": "\n".join(knowledge_items),
-            "knowledge_from_ledger": self._format_knowledge_summary(context.knowledge_retrieved),
+            "knowledge_from_ledger": self._format_knowledge_summary(
+                context.knowledge_retrieved
+            ),
         }
 
     def _enhance_domain_context(
@@ -844,7 +856,9 @@ class ContextEnhancer:
         # Add domain-specific requirements
         if context.domain in domain_info:
             domain_data = domain_info[context.domain]
-            enhanced["requirements_context"] = self._format_domain_requirements(domain_data)
+            enhanced["requirements_context"] = self._format_domain_requirements(
+                domain_data
+            )
             enhanced["quality_standards"] = self._format_quality_standards(domain_data)
 
         # Add available tools formatted for the domain
@@ -893,7 +907,9 @@ class ContextEnhancer:
         # Decision history
         decision_history = data.get("decision_history", [])
         if decision_history:
-            recent_decisions = [d.get("action", "unknown") for d in decision_history[-3:]]
+            recent_decisions = [
+                d.get("action", "unknown") for d in decision_history[-3:]
+            ]
             enhanced["recent_decisions"] = ", ".join(recent_decisions)
 
         return enhanced
@@ -945,17 +961,23 @@ class ContextEnhancer:
             for standard in domain_data["coding_standards"]:
                 requirements.append(f"- Follow {standard}")
 
-        return "\n".join(requirements) if requirements else "Standard requirements apply"
+        return (
+            "\n".join(requirements) if requirements else "Standard requirements apply"
+        )
 
     def _format_quality_standards(self, domain_data: Dict[str, Any]) -> str:
         """Format quality standards for the domain."""
         standards = []
 
         if "test_coverage_min" in domain_data:
-            standards.append(f"Test coverage: minimum {domain_data['test_coverage_min']}%")
+            standards.append(
+                f"Test coverage: minimum {domain_data['test_coverage_min']}%"
+            )
 
         if "code_quality_min" in domain_data:
-            standards.append(f"Code quality score: minimum {domain_data['code_quality_min']}")
+            standards.append(
+                f"Code quality score: minimum {domain_data['code_quality_min']}"
+            )
 
         return "\n".join(standards) if standards else "Standard quality expectations"
 
@@ -1020,7 +1042,9 @@ class ResponseAnalyzer:
         analysis["confidence"] = average_score
 
         # Extract structured data based on prompt type
-        analysis["extracted_data"] = self._extract_structured_data(response, prompt_type)
+        analysis["extracted_data"] = self._extract_structured_data(
+            response, prompt_type
+        )
 
         # Identify issues
         analysis["issues"] = self._identify_issues(response, analysis["quality_scores"])
@@ -1042,7 +1066,8 @@ class ResponseAnalyzer:
         if prompt_type == PromptType.CODE_GENERATION:
             indicators["has_code_blocks"] = "```" in response
             indicators["has_documentation"] = any(
-                word in response.lower() for word in ["usage", "example", "documentation"]
+                word in response.lower()
+                for word in ["usage", "example", "documentation"]
             )
 
         elif prompt_type == PromptType.ERROR_ANALYSIS:
@@ -1075,7 +1100,9 @@ class ResponseAnalyzer:
         if expected_format and "json" in str(expected_format).lower():
             try:
                 # Try to extract and parse JSON
-                json_match = re.search(r"```json\s*(\{.*?\})\s*```", response, re.DOTALL)
+                json_match = re.search(
+                    r"```json\s*(\{.*?\})\s*```", response, re.DOTALL
+                )
                 if json_match:
                     json.loads(json_match.group(1))
                     accuracy_indicators["valid_json"] = True
@@ -1105,11 +1132,13 @@ class ResponseAnalyzer:
         """Assess how actionable the response is."""
         actionability_indicators = {
             "specific_steps": any(
-                word in response.lower() for word in ["step", "action", "command", "run"]
+                word in response.lower()
+                for word in ["step", "action", "command", "run"]
             ),
             "concrete_examples": "```" in response or "example" in response.lower(),
             "clear_next_steps": any(
-                phrase in response.lower() for phrase in ["next", "then", "after", "following"]
+                phrase in response.lower()
+                for phrase in ["next", "then", "after", "following"]
             ),
         }
 
@@ -1147,7 +1176,9 @@ class ResponseAnalyzer:
 
         return max(0.0, compliance_score)
 
-    def _extract_structured_data(self, response: str, prompt_type: PromptType) -> Dict[str, Any]:
+    def _extract_structured_data(
+        self, response: str, prompt_type: PromptType
+    ) -> Dict[str, Any]:
         """Extract structured data from response based on prompt type."""
         extracted = {}
 
@@ -1174,13 +1205,17 @@ class ResponseAnalyzer:
         # Prompt-specific extraction
         if prompt_type == PromptType.DECISION_MAKING:
             # Extract recommendation
-            rec_match = re.search(r"recommend(?:ed|ation)?[:\s]+([^.\n]+)", response, re.IGNORECASE)
+            rec_match = re.search(
+                r"recommend(?:ed|ation)?[:\s]+([^.\n]+)", response, re.IGNORECASE
+            )
             if rec_match:
                 extracted["recommendation"] = rec_match.group(1).strip()
 
         elif prompt_type == PromptType.ERROR_ANALYSIS:
             # Extract root cause
-            cause_match = re.search(r"root cause[:\s]+([^.\n]+)", response, re.IGNORECASE)
+            cause_match = re.search(
+                r"root cause[:\s]+([^.\n]+)", response, re.IGNORECASE
+            )
             if cause_match:
                 extracted["root_cause"] = cause_match.group(1).strip()
 
@@ -1237,7 +1272,9 @@ class ResponseAnalyzer:
             "therefore",
             "however",
         ]
-        transition_count = sum(1 for word in transition_words if word in response.lower())
+        transition_count = sum(
+            1 for word in transition_words if word in response.lower()
+        )
 
         # Responses should have some logical flow indicators
         return transition_count >= 2
@@ -1245,7 +1282,9 @@ class ResponseAnalyzer:
     def _check_clear_language(self, response: str) -> bool:
         """Check for clear, understandable language."""  # Simple heuristics for clarity
         sentences = response.split(".")
-        avg_sentence_length = sum(len(s.split()) for s in sentences) / max(len(sentences), 1)
+        avg_sentence_length = sum(len(s.split()) for s in sentences) / max(
+            len(sentences), 1
+        )
 
         # Sentences should be reasonably short
         return avg_sentence_length <= 25
@@ -1260,7 +1299,9 @@ class ResponseAnalyzer:
 
         return sum(formatting_indicators) >= 2
 
-    def _identify_issues(self, response: str, quality_scores: Dict[str, float]) -> List[str]:
+    def _identify_issues(
+        self, response: str, quality_scores: Dict[str, float]
+    ) -> List[str]:
         """Identify specific issues with the response."""
         issues = []
 
@@ -1360,7 +1401,9 @@ class PromptOrchestrator:
 
         # Enhance context
         available_data = available_data or {}
-        enhanced_context = self.context_enhancer.enhance_context(context, available_data)
+        enhanced_context = self.context_enhancer.enhance_context(
+            context, available_data
+        )
 
         # Render prompt
         try:
@@ -1374,7 +1417,9 @@ class PromptOrchestrator:
 
         # Analyze response
         expected_format = self._get_expected_format(template)
-        analysis = self.response_analyzer.analyze_response(response, prompt_type, expected_format)
+        analysis = self.response_analyzer.analyze_response(
+            response, prompt_type, expected_format
+        )
 
         # Create execution record
         execution_time = (datetime.now() - start_time).total_seconds()
@@ -1405,7 +1450,9 @@ class PromptOrchestrator:
 
         return execution
 
-    async def _execute_with_claude(self, prompt: str) -> Tuple[str, Dict[str, int], float]:
+    async def _execute_with_claude(
+        self, prompt: str
+    ) -> Tuple[str, Dict[str, int], float]:
         """Execute prompt with Claude and return response, token usage, and cost."""
         try:
             # This would integrate with your actual Claude client
@@ -1415,7 +1462,8 @@ class PromptOrchestrator:
             token_usage = {
                 "prompt_tokens": len(prompt.split()) * 1.3,  # Rough estimate
                 "response_tokens": len(response.content.split()) * 1.3,
-                "total_tokens": len(prompt.split()) * 1.3 + len(response.content.split()) * 1.3,
+                "total_tokens": len(prompt.split()) * 1.3
+                + len(response.content.split()) * 1.3,
             }
 
             # Estimate cost (this would be provided by the client)
@@ -1444,8 +1492,12 @@ class PromptOrchestrator:
             perf["average_cost"] = execution.cost
             perf["average_time"] = execution.execution_time
         else:
-            perf["average_quality"] = (1 - alpha) * perf["average_quality"] + alpha * quality_score
-            perf["average_cost"] = (1 - alpha) * perf["average_cost"] + alpha * execution.cost
+            perf["average_quality"] = (1 - alpha) * perf[
+                "average_quality"
+            ] + alpha * quality_score
+            perf["average_cost"] = (1 - alpha) * perf[
+                "average_cost"
+            ] + alpha * execution.cost
             perf["average_time"] = (1 - alpha) * perf[
                 "average_time"
             ] + alpha * execution.execution_time
@@ -1479,7 +1531,9 @@ class PromptOrchestrator:
 
         # Analyze template performance
         for template_id, perf in self.template_performance.items():
-            if perf["total_executions"] >= 5:  # Only analyze templates with sufficient data
+            if (
+                perf["total_executions"] >= 5
+            ):  # Only analyze templates with sufficient data
 
                 # Low success rate templates
                 if perf["success_rate"] < 0.7:
@@ -1525,7 +1579,9 @@ class PromptOrchestrator:
 
         return recommendations
 
-    def optimize_template(self, template_id: str, feedback: Dict[str, Any]) -> PromptTemplate:
+    def optimize_template(
+        self, template_id: str, feedback: Dict[str, Any]
+    ) -> PromptTemplate:
         """Optimize a template based on performance feedback."""
         template = self.template_library.get_template(template_id)
         if not template:
@@ -1578,10 +1634,12 @@ class PromptOrchestrator:
 
         # Average metrics
         avg_cost = sum(e.cost for e in recent_executions) / len(recent_executions)
-        avg_time = sum(e.execution_time for e in recent_executions) / len(recent_executions)
-        avg_tokens = sum(e.token_usage.get("total_tokens", 0) for e in recent_executions) / len(
+        avg_time = sum(e.execution_time for e in recent_executions) / len(
             recent_executions
         )
+        avg_tokens = sum(
+            e.token_usage.get("total_tokens", 0) for e in recent_executions
+        ) / len(recent_executions)
 
         # Template performance
         template_stats = {}
@@ -1604,7 +1662,8 @@ class PromptOrchestrator:
             "success_rate": sum(
                 1
                 for e in recent_executions
-                if e.response_quality in [ResponseQuality.EXCELLENT, ResponseQuality.GOOD]
+                if e.response_quality
+                in [ResponseQuality.EXCELLENT, ResponseQuality.GOOD]
             )
             / len(recent_executions),
         }
@@ -1615,7 +1674,9 @@ class PromptOrchestrator:
         counter = len(self.execution_history)
         return f"exec_{timestamp}_{counter:04d}"
 
-    def _get_expected_format(self, template: PromptTemplate) -> Optional[Dict[str, Any]]:
+    def _get_expected_format(
+        self, template: PromptTemplate
+    ) -> Optional[Dict[str, Any]]:
         """Extract expected response format from template."""
         if "json" in template.template_text.lower():
             return {"format": "json"}
@@ -1678,7 +1739,9 @@ class PromptOrchestrator:
 
         for line in lines:
             # Skip overly verbose lines
-            if len(line) > 200 and not any(marker in line for marker in ["$", "**", "```"]):
+            if len(line) > 200 and not any(
+                marker in line for marker in ["$", "**", "```"]
+            ):
                 # Truncate long lines that don't contain variables or formatting
                 reduced_lines.append(line[:150] + "...")
             else:
@@ -1710,7 +1773,9 @@ class PromptOrchestrator:
             with open(performance_file, "wb") as f:
                 pickle.dump(dict(self.template_performance), f)
 
-            logger.info(f"Saved execution history ({len(self.execution_history)} executions)")
+            logger.info(
+                f"Saved execution history ({len(self.execution_history)} executions)"
+            )
 
         except Exception as e:
             logger.error(f"Failed to save execution history: {e}")
@@ -1730,7 +1795,9 @@ class PromptOrchestrator:
                     loaded_performance = pickle.load(f)
                     self.template_performance.update(loaded_performance)
 
-            logger.info(f"Loaded execution history ({len(self.execution_history)} executions)")
+            logger.info(
+                f"Loaded execution history ({len(self.execution_history)} executions)"
+            )
 
         except Exception as e:
             logger.warning(f"Failed to load execution history: {e}")
@@ -1834,12 +1901,16 @@ if __name__ == "__main__":
         )
 
         print("=== TESTING ERROR ANALYSIS ===")
-        execution = await orchestrator.execute_prompt(PromptType.ERROR_ANALYSIS, error_context)
+        execution = await orchestrator.execute_prompt(
+            PromptType.ERROR_ANALYSIS, error_context
+        )
 
         print(f"Template used: {execution.template_id}")
         print(f"Response quality: {execution.response_quality.name}")
         print(f"Execution time: {execution.execution_time:.2f}s")
-        print(f"Analysis: {execution.metadata.get('analysis', {}).get('extracted_data', {})}")
+        print(
+            f"Analysis: {execution.metadata.get('analysis', {}).get('extracted_data', {})}"
+        )
 
         print("\n=== TESTING CODE GENERATION ===")
         code_context = PromptContext(
