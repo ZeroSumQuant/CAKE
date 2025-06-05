@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from scripts.master_cleanup import MasterCleanup
+import sys
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from icing.master_cleanup import MasterCleanup
 
 
 @pytest.fixture
@@ -54,9 +57,9 @@ class TestFixImports:
         # Mock the target_path to use tmp_path
         cleanup.target_path = tmp_path
         cleanup.dry_run = False  # Actually apply changes for this test
-        
+
         cleanup.fix_imports()
-        
+
         result = test_file.read_text()
         assert result == expected_code
 
@@ -101,9 +104,9 @@ class TestFixDocstrings:
 
         cleanup.target_path = tmp_path
         cleanup.dry_run = False
-        
+
         cleanup.fix_docstrings()
-        
+
         result = test_file.read_text()
         assert result == expected_code
 
@@ -148,9 +151,9 @@ class TestASTEmptyBodySweep:
 
         cleanup.target_path = tmp_path
         cleanup.dry_run = False
-        
+
         cleanup.ast_empty_body_sweep()
-        
+
         result = test_file.read_text()
         assert result == expected_code
 
@@ -165,33 +168,37 @@ class TestPhase3Integration:
         (tmp_path / "migrations").mkdir()
         (tmp_path / "__pycache__").mkdir()
         (tmp_path / "static").mkdir()
-        
+
         # Add Python files
         (tmp_path / "src" / "main.py").write_text("import os, sys\n")
         (tmp_path / "migrations" / "001_initial.py").write_text("import os, sys\n")
         (tmp_path / "__pycache__" / "cached.py").write_text("import os, sys\n")
-        
+
         cleanup.target_path = tmp_path
         cleanup.dry_run = False
-        
+
         cleanup.fix_imports()
-        
+
         # Only src/main.py should be modified
         assert (tmp_path / "src" / "main.py").read_text() == "import os\nimport sys\n"
-        assert (tmp_path / "migrations" / "001_initial.py").read_text() == "import os, sys\n"
-        assert (tmp_path / "__pycache__" / "cached.py").read_text() == "import os, sys\n"
+        assert (
+            tmp_path / "migrations" / "001_initial.py"
+        ).read_text() == "import os, sys\n"
+        assert (
+            tmp_path / "__pycache__" / "cached.py"
+        ).read_text() == "import os, sys\n"
 
     def test_dry_run_skips_formatters(self, cleanup, tmp_path):
         """Test that black/isort are skipped in dry-run mode."""
         test_file = tmp_path / "test.py"
         test_file.write_text("import   os\n")
-        
+
         cleanup.target_path = tmp_path
         cleanup.dry_run = True  # Dry run mode
-        
+
         # This should not actually run black/isort
         cleanup.run_black()
         cleanup.run_isort()
-        
+
         # File should be unchanged
         assert test_file.read_text() == "import   os\n"

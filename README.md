@@ -2,7 +2,9 @@
 
 [![CI Status](https://github.com/ZeroSumQuant/CAKE/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeroSumQuant/CAKE/actions/workflows/ci.yml)
 
-CAKE is a deterministic intervention system that monitors LLM operations, prevents known failure patterns, and enforces safety guardrails without human escalation.
+**CAKE** is a deterministic intervention system that monitors LLM operations, prevents known failure patterns, and enforces safety guardrails without human escalation.
+
+**Icing** is an optional refactoring tool that helps keep Python repositories CI-green by fixing syntax errors, organizing imports, and standardizing project structure. See [icing/README.md](icing/README.md) for details.
 
 ## 🎯 Overview
 

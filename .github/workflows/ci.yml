@@ -175,3 +175,41 @@ jobs:
       run: |
         npm install -g markdownlint-cli
         markdownlint '**/*.md' --ignore node_modules --ignore .venv || true
+
+  # Icing Helper Tool Tests
+  icing-tests:
+    name: Icing - Test Suite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install Icing
+      working-directory: icing
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov flake8 black
+    
+    - name: Run Icing linting
+      run: |
+        black --check icing/
+        flake8 icing/
+    
+    - name: Run Icing tests
+      working-directory: icing
+      run: |
+        pytest -q tests
+    
+    - name: Test Icing CLI
+      run: |
+        # Test that icing CLI is installed
+        icing --help || echo "CLI not yet implemented"

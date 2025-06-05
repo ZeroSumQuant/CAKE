@@ -1701,6 +1701,62 @@ class MasterCleanup:
         self.log(f"  ✓ Created pyproject.toml for project '{name}'")
         self.summary["scaffold_pyproject"] = str(pyproj)
 
+    def ensure_stub_files(self) -> None:
+        """Create __init__.py and README files in key directories if they don't exist."""
+        self.log("Checking for stub files...")
+        created_files = []
+
+        # Create tests/__init__.py if tests directory exists
+        tests_dir = self.target_path / "tests"
+        if tests_dir.exists() and tests_dir.is_dir():
+            init_file = tests_dir / "__init__.py"
+            if not init_file.exists():
+                init_file.write_text("# Test package\n")
+                self.log("  ✓ Created tests/__init__.py")
+                created_files.append(str(init_file))
+
+        # Create notebooks/README.md if notebooks directory exists
+        notebooks_dir = self.target_path / "notebooks"
+        if notebooks_dir.exists() and notebooks_dir.is_dir():
+            readme_file = notebooks_dir / "README.md"
+            if not readme_file.exists():
+                content = """# Notebooks
+
+This directory contains Jupyter notebooks for analysis and experimentation.
+
+## Organization
+
+- Place exploratory notebooks directly in this directory
+- Create subdirectories for specific analysis topics if needed
+- Use descriptive names for notebooks (e.g., `data_exploration.ipynb`, `model_training.ipynb`)
+
+## Best Practices
+
+- Clear output before committing (unless output is essential)
+- Include a markdown cell at the top explaining the notebook's purpose
+- Use meaningful variable names and add comments for complex operations
+"""
+                readme_file.write_text(content)
+                self.log("  ✓ Created notebooks/README.md")
+                created_files.append(str(readme_file))
+
+        # Create src/<project>/__init__.py if src directory exists
+        src_dir = self.target_path / "src"
+        if src_dir.exists() and src_dir.is_dir():
+            project_name = self._get_project_name()
+            project_dir = src_dir / project_name
+            if project_dir.exists() and project_dir.is_dir():
+                init_file = project_dir / "__init__.py"
+                if not init_file.exists():
+                    init_file.write_text(f'"""Package: {project_name}"""\n')
+                    self.log(f"  ✓ Created src/{project_name}/__init__.py")
+                    created_files.append(str(init_file))
+
+        if created_files:
+            self.summary["scaffold_stubs"] = created_files
+        else:
+            self.log("  ✓ All stub files already exist")
+
     def run(self) -> None:
         """Execute all phases in order."""
         # Check branch safety
@@ -1754,6 +1810,7 @@ class MasterCleanup:
             ("build_manifest", self.build_manifest),
             ("organise_project", self.organise_project),
             ("write_pyproject", self.write_pyproject),
+            ("ensure_stub_files", self.ensure_stub_files),
         ]
 
         # Execute phases
