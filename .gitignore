@@ -1,3 +1,14 @@
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Coverage reports
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+
 # Python
 __pycache__/
 *.py[cod]

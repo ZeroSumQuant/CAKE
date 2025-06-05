@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Tests for Phase 4 scaffold functionality."""
 
+# Import the cleanup script
+import sys
 from pathlib import Path
 
 import pytest
-
-# Import the cleanup script
-import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from icing.master_cleanup import MasterCleanup  # noqa: E402
