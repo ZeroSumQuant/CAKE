@@ -479,7 +479,7 @@ class MasterCleanup:
                     ) and not stripped.startswith("from __future__"):
                         # Collect all imports in this contiguous block
                         import_block = []
-                        import_start = i
+                        # import_start = i  # Currently unused
 
                         while i < len(lines) and (
                             lines[i].strip().startswith(("import ", "from "))
@@ -618,7 +618,7 @@ class MasterCleanup:
                         mod = parts[1].split(".")[0]
                         bucket = "from_std" if mod in stdlib else "from_oth"
                         buckets[bucket].append(
-                            f"{code}{'  '+comment if comment else ''}"
+                            f"{code}{'  ' + comment if comment else ''}"
                         )
 
         # Now emit imports in the right order: plain imports before aliases
@@ -1298,6 +1298,216 @@ class MasterCleanup:
                 self.log(f"  ⚠️  Error processing {py_file}: {e}")
                 self.error_log.append(f"{py_file}: {e}")
 
+    def classify_file(self, path: Path) -> str:  # noqa: C901
+        """Classify a file based on its content and purpose."""
+        # Handle notebooks
+        if path.suffix == ".ipynb":
+            return "notebook"
+
+        # Handle binary files
+        if path.suffix in {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".bmp",
+            ".ico",
+            ".svg",
+            ".pdf",
+            ".zip",
+            ".tar",
+            ".gz",
+            ".bz2",
+            ".7z",
+            ".exe",
+            ".dll",
+            ".so",
+            ".dylib",
+            ".a",
+            ".o",
+            ".pyc",
+            ".pyo",
+            ".pyd",
+            ".whl",
+        }:
+            return "binary"
+
+        # Handle template files
+        if path.suffix in {
+            ".html",
+            ".htm",
+            ".xml",
+            ".jinja",
+            ".jinja2",
+            ".j2",
+            ".tmpl",
+            ".tpl",
+            ".mustache",
+            ".handlebars",
+        }:
+            return "template"
+
+        # Handle Python files
+        if path.suffix == ".py":
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+                # Check for shebang script
+                if content.startswith("#!/usr/bin/env python") or content.startswith(
+                    "#!/usr/bin/python"
+                ):
+                    return "script"
+                # Check for test files
+                if (
+                    "pytest" in content
+                    or "import pytest" in content
+                    or "import unittest" in content
+                ):
+                    return "test"
+                # Check for scripts (executable files)
+                if "__name__" in content and "main" in content:
+                    return "script"
+                # Default to module
+                return "module"
+            except Exception:
+                return "module"  # Default for unreadable Python files
+
+        # Handle data files
+        if path.suffix in {".csv", ".json", ".parquet", ".xlsx", ".h5", ".hdf5"}:
+            return "data"
+
+        # Handle documentation
+        if path.suffix in {".md", ".rst", ".txt"} or path.name in {
+            "README",
+            "LICENSE",
+            "CHANGELOG",
+        }:
+            return "documentation"
+
+        # Handle configuration
+        if path.name in {
+            ".gitignore",
+            ".flake8",
+            "pyproject.toml",
+            "setup.py",
+            "setup.cfg",
+            "requirements.txt",
+            "Pipfile",
+            "poetry.lock",
+            "Makefile",
+            "Dockerfile",
+            ".dockerignore",
+            ".editorconfig",
+            ".gitattributes",
+        }:
+            return "configuration"
+
+        # Everything else
+        return "other"
+
+    def build_manifest(self) -> dict:
+        """Build a manifest of all files in the project."""
+        self.log("Building file manifest...")
+
+        manifest = {
+            "timestamp": datetime.now().isoformat(),
+            "target_path": str(self.target_path),
+            "files": {},
+            "summary": {
+                "notebook": 0,
+                "test": 0,
+                "script": 0,
+                "module": 0,
+                "data": 0,
+                "documentation": 0,
+                "configuration": 0,
+                "binary": 0,
+                "template": 0,
+                "other": 0,
+                "oversize_files": 0,
+            },
+        }
+
+        # Skip directories
+        skip_dirs = {
+            ".git",
+            "__pycache__",
+            ".venv",
+            "venv",
+            "node_modules",
+            ".tox",
+            ".eggs",
+            ".pytest_cache",
+            ".mypy_cache",
+            "htmlcov",
+            ".coverage",
+            "build",
+            "dist",
+            ".cache",
+        }
+
+        # Walk through all files
+        for file_path in self.target_path.rglob("*"):
+            # Skip if in excluded directory
+            if any(part in skip_dirs for part in file_path.parts):
+                continue
+
+            # Skip egg-info directories
+            if any(part.endswith(".egg-info") for part in file_path.parts):
+                continue
+
+            # Skip directories themselves
+            if file_path.is_dir():
+                continue
+
+            # Skip hidden files except important ones
+            if file_path.name.startswith(".") and file_path.name not in {
+                ".gitignore",
+                ".flake8",
+            }:
+                continue
+
+            # Classify the file
+            classification = self.classify_file(file_path)
+            relative_path = file_path.relative_to(self.target_path)
+
+            # Get file stats
+            file_size = file_path.stat().st_size
+            file_info = {
+                "classification": classification,
+                "size": file_size,
+                "suffix": file_path.suffix,
+                "executable": os.access(file_path, os.X_OK),
+            }
+
+            # Check for oversize data files (> 20MB)
+            if classification == "data" and file_size > 20 * 1024 * 1024:
+                file_info["oversize"] = True
+                manifest["summary"]["oversize_files"] += 1
+
+            manifest["files"][str(relative_path)] = file_info
+            manifest["summary"][classification] += 1
+
+        self.log(f"  ✓ Classified {len(manifest['files'])} files")
+        for category, count in manifest["summary"].items():
+            if category != "oversize_files" and count > 0:
+                self.log(f"    - {category}: {count}")
+
+        if manifest["summary"]["oversize_files"] > 0:
+            self.log(
+                f"  ⚠️  Found {manifest['summary']['oversize_files']} oversize data files (>20MB)"
+            )
+
+        # Save manifest to .cake directory
+        cake_dir = self.target_path / ".cake"
+        cake_dir.mkdir(exist_ok=True)
+
+        manifest_path = cake_dir / "manifest.json"
+        with manifest_path.open("w") as f:
+            json.dump(manifest, f, indent=2)
+
+        self.log(f"  ✓ Manifest saved → {manifest_path} (open to view details)")
+        return manifest
+
     def run(self) -> None:
         """Execute all phases in order."""
         # Check branch safety
@@ -1348,6 +1558,7 @@ class MasterCleanup:
             ("ast_empty_body_sweep", self.ast_empty_body_sweep),
             ("run_black", self.run_black),
             ("run_isort", self.run_isort),
+            ("build_manifest", self.build_manifest),
         ]
 
         # Execute phases
