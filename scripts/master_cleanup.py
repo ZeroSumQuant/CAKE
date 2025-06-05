@@ -516,7 +516,7 @@ class MasterCleanup:
                 self.log(f"  ⚠️  Error processing {py_file}: {e}")
                 self.error_log.append(f"{py_file}: {e}")
 
-    def _dedupe_import_block(self, block_lines: list[str]) -> list[str]:
+    def _dedupe_import_block(self, block_lines: list[str]) -> list[str]:  # noqa: C901
         """
         Split comma-imports, keep first occurrence of each exact statement,
         then emit in order:
@@ -644,7 +644,9 @@ class MasterCleanup:
         )
         return result
 
-    def _dedupe_and_sort_import_block(self, block_lines: list[str]) -> list[str]:
+    def _dedupe_and_sort_import_block(
+        self, block_lines: list[str]
+    ) -> list[str]:  # noqa: C901
         """Deduplicate and sort imports, grouping by type."""
         # First deduplicate
         deduped = self._dedupe_import_block(block_lines)
@@ -1508,6 +1510,174 @@ class MasterCleanup:
         self.log(f"  ✓ Manifest saved → {manifest_path} (open to view details)")
         return manifest
 
+    def _load_manifest(self) -> dict:
+        """Load the manifest from .cake/manifest.json."""
+        manifest_path = self.target_path / ".cake" / "manifest.json"
+        if not manifest_path.exists():
+            self.log("  ⚠️  No manifest found. Run build_manifest phase first.")
+            return {"files": {}, "summary": {}}
+
+        with manifest_path.open() as f:
+            return json.load(f)
+
+    def _get_project_name(self) -> str:
+        """Get the project name for src/<project>/ directory."""
+        # Use the target directory name, lowercased
+        return self.target_path.name.lower()
+
+    def _target_path_for_file(self, file_path: str, file_info: dict):  # noqa: C901
+        """Determine the target path for a file based on its classification."""
+        classification = file_info["classification"]
+        source = Path(file_path)
+
+        # Skip if already in the right place
+        if classification == "notebook" and source.parts[0] == "notebooks":
+            return None
+        if classification == "test" and source.parts[0] == "tests":
+            return None
+        if classification == "script" and source.parts[0] == "scripts":
+            return None
+        if classification == "binary" and source.parts[0] == "assets":
+            return None
+        if classification == "template" and source.parts[0] == "templates":
+            return None
+        if (
+            classification == "data"
+            and len(source.parts) >= 2
+            and source.parts[0] == "data"
+        ):
+            return None
+
+        # Map classifications to target directories
+        if classification == "notebook":
+            # Preserve subdirectory structure
+            if len(source.parts) > 1:
+                return Path("notebooks") / Path(*source.parts[1:])
+            return Path("notebooks") / source.name
+
+        elif classification == "test":
+            return Path("tests") / source.name
+
+        elif classification == "script":
+            return Path("scripts") / source.name
+
+        elif classification == "module":
+            project_name = self._get_project_name()
+            return Path("src") / project_name / source.name
+
+        elif classification == "data":
+            return Path("data") / "raw" / source.name
+
+        elif classification == "binary":
+            return Path("assets") / source.name
+
+        elif classification == "template":
+            return Path("templates") / source.name
+
+        # Leave other files in place
+        return None
+
+    def organise_project(self) -> None:  # noqa: C901
+        """Organize project files based on the manifest."""
+        self.log("Organizing project structure...")
+
+        # Load manifest
+        manifest = self._load_manifest()
+        if not manifest["files"]:
+            self.log("  ⚠️  No files in manifest to organize")
+            return
+
+        # Plan moves
+        moves = []
+        skipped = 0
+
+        for file_path, file_info in manifest["files"].items():
+            source = self.target_path / file_path
+
+            # Skip if source doesn't exist (might have been moved already)
+            if not source.exists():
+                continue
+
+            # Get target path
+            target_relative = self._target_path_for_file(file_path, file_info)
+            if not target_relative:
+                continue  # File is already in the right place
+
+            target = self.target_path / target_relative
+
+            # Skip if target already exists
+            if target.exists():
+                self.log(f"  ⚠️  Target {target_relative} exists; skipping {file_path}")
+                skipped += 1
+                continue
+
+            moves.append((source, target, file_path, target_relative))
+
+        # Report plan in dry-run mode
+        if self.dry_run:
+            self.log(f"  📋 Planning to move {len(moves)} files:")
+            for source, target, src_rel, tgt_rel in moves[:10]:  # Show first 10
+                self.log(f"     {src_rel} → {tgt_rel}")
+            if len(moves) > 10:
+                self.log(f"     ... and {len(moves) - 10} more")
+
+            if moves:
+                self.log(
+                    f"\n  Plan: {len(moves)} files will be moved. Re-run with --apply to execute."
+                )
+            self.summary["organise_moves_planned"] = len(moves)
+            self.summary["organise_moves_skipped"] = skipped
+            return
+
+        # Execute moves
+        moved = 0
+        import shutil
+
+        for source, target, src_rel, tgt_rel in moves:
+            try:
+                # Create target directory
+                target.parent.mkdir(parents=True, exist_ok=True)
+
+                # Move the file
+                if not self.skip_git:
+                    result = self.safe_run(
+                        ["git", "mv", str(source), str(target)],
+                        capture_output=True,
+                        text=True,
+                    )
+                    if result.returncode != 0:
+                        # Fall back to regular move if git mv fails
+                        shutil.move(str(source), str(target))
+                else:
+                    shutil.move(str(source), str(target))
+
+                self.log(f"  ✓ Moved {src_rel} → {tgt_rel}")
+                moved += 1
+
+            except Exception as e:
+                self.log(f"  ⚠️  Failed to move {src_rel}: {e}")
+                self.error_log.append(f"Move failed: {src_rel} → {tgt_rel}: {e}")
+
+        # Create missing __init__.py files
+        if moved > 0:
+            for init_dir in ["tests", "src"]:
+                init_path = self.target_path / init_dir / "__init__.py"
+                if init_path.parent.exists() and not init_path.exists():
+                    init_path.touch()
+                    self.log(f"  ✓ Created {init_dir}/__init__.py")
+
+            # Create data/README.md if we moved data files
+            data_readme = self.target_path / "data" / "README.md"
+            if data_readme.parent.exists() and not data_readme.exists():
+                data_readme.write_text(
+                    "# Data Directory\n\nThis directory contains project data files.\n"
+                )
+                self.log("  ✓ Created data/README.md")
+
+        self.summary["organise"] = {"moved": moved, "skipped": skipped}
+
+        self.log(f"  ✓ Organization complete: {moved} moved, {skipped} skipped")
+
     def run(self) -> None:
         """Execute all phases in order."""
         # Check branch safety
@@ -1559,6 +1729,7 @@ class MasterCleanup:
             ("run_black", self.run_black),
             ("run_isort", self.run_isort),
             ("build_manifest", self.build_manifest),
+            ("organise_project", self.organise_project),
         ]
 
         # Execute phases
