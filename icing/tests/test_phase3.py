@@ -1,10 +1,9 @@
 """Test Phase 3 transformations: imports, docstrings, formatting, and AST sweep."""
 
+import sys
 from pathlib import Path
 
 import pytest
-
-import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from icing.master_cleanup import MasterCleanup

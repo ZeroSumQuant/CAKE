@@ -1,10 +1,18 @@
 # CAKE - Claude Autonomy Kit Engine
 
 [![CI Status](https://github.com/ZeroSumQuant/CAKE/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeroSumQuant/CAKE/actions/workflows/ci.yml)
+[![Development Status](https://img.shields.io/badge/status-alpha-orange.svg)](https://github.com/ZeroSumQuant/CAKE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ZeroSumQuant/CAKE/blob/main/LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://makeapullrequest.com)
 
 **CAKE** is a deterministic intervention system that monitors LLM operations, prevents known failure patterns, and enforces safety guardrails without human escalation.
 
 **Icing** is an optional refactoring tool that helps keep Python repositories CI-green by fixing syntax errors, organizing imports, and standardizing project structure. See [icing/README.md](icing/README.md) for details.
+
+> **Note**: CAKE is under active development. We're using an innovative adversarial LLM pair programming approach for rapid prototyping. See [PROCESS.md](docs/PROCESS.md) for our development methodology.
 
 ## 🎯 Overview
 
