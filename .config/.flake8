@@ -1,6 +1,9 @@
 [flake8]
 max-line-length = 100
 extend-ignore = C901,E501
+exclude = .venv,venv,__pycache__,.git,node_modules,.tox,.eggs,build,dist
 per-file-ignores =
     # Old adapters stay messy for now
     cake/adapters/*: E,W,C901
+    # Script with regex patterns
+    final_syntax_fixes.py: W605
