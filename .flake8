@@ -29,6 +29,9 @@ per-file-ignores =
     */__init__.py:D104
     # Legacy cake components - temporarily ignore common issues
     cake/*:E501,W291,W293,F541,F811,E226,C901
+    # Icing tool - complex import handling and test setup
+    icing/master_cleanup.py:C901
+    icing/tests/*:E402,E501
 
 # Exclude directories
 exclude =

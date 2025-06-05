@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "icing-for-cake"
 version = "0.9.0b0"
-description = "Repo-cleaner helper for CAKE"
+description = "Repo-cleaner helper for the CAKE project"
 requires-python = ">=3.8"
 dependencies = [
   "black>=24",
@@ -15,9 +15,5 @@ dependencies = [
 [project.scripts]
 icing = "icing.cli:main"
 
-# ---- setuptools config ----
 [tool.setuptools]
-packages = ["icing"]   # the *only* package we publish
-
-[tool.setuptools.package-dir]
-"icing" = "."          # map package 'icing' to current dir
+packages = ["icing"]
