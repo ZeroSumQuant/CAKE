@@ -9,8 +9,8 @@ import pytest
 # Import the cleanup script
 import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-from master_cleanup import MasterCleanup  # noqa: E402
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from icing.master_cleanup import MasterCleanup  # noqa: E402
 
 
 class TestPhase4Manifest:
