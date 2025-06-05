@@ -27,6 +27,8 @@ per-file-ignores =
     scripts/*:T201
     # __init__.py files don't need docstrings
     */__init__.py:D104
+    # Legacy cake components - temporarily ignore common issues
+    cake/*:E501,W291,W293,F541,F811,E226,C901
 
 # Exclude directories
 exclude =

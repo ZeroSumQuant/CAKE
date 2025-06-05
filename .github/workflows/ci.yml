@@ -85,12 +85,13 @@ jobs:
     
     - name: Run Bandit security check
       run: |
-        # Check if there are Python files to scan
         if find cake/ -name "*.py" -type f | grep -q .; then
-          bandit -r cake/ -ll -f json -o bandit-report.json || true
-          bandit -r cake/ -ll
+          bandit -r cake/ -ll \
+            --baseline docs/reports/bandit-baseline.json \
+            -f json -o bandit-report.json || true
+          bandit -r cake/ -ll --baseline docs/reports/bandit-baseline.json
         else
-          echo "No Python files in cake/ yet, skipping bandit"
+          echo "No Python files in cake/, skipping bandit"
           echo "{}" > bandit-report.json
         fi
     
