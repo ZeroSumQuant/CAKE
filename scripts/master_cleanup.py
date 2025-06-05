@@ -449,15 +449,563 @@ class MasterCleanup:
                 self.log(f"  ⚠️  Error processing {py_file}: {e}")
                 self.error_log.append(f"{py_file}: {e}")
 
-    def fix_imports(self) -> None:
+    def fix_imports(self) -> None:  # noqa: C901
         """One import per line, dedupe, sort obvious junk away."""
-        # Placeholder for Phase 5
         self.log("Fixing imports...")
 
-    def fix_docstrings(self) -> None:
-        """Normalise triple quotes, ignore one-liners."""
-        # Placeholder for Phase 6
+        # Directories to skip
+        skip_dirs = {"migrations", "proto", "static", "__pycache__", ".venv", "venv"}
+
+        for py_file in self.iter_python_files():
+            # Skip files in binary/generated directories
+            if any(part in skip_dirs for part in py_file.parts):
+                continue
+
+            try:
+                content = py_file.read_text(encoding="utf-8")
+                lines = content.splitlines()
+                new_lines = []
+                modified = False
+
+                # Process file line by line
+                i = 0
+                while i < len(lines):
+                    line = lines[i]
+                    stripped = line.strip()
+
+                    # Check if this is the start of an import block
+                    if stripped.startswith(
+                        ("import ", "from ")
+                    ) and not stripped.startswith("from __future__"):
+                        # Collect all imports in this contiguous block
+                        import_block = []
+                        import_start = i
+
+                        while i < len(lines) and (
+                            lines[i].strip().startswith(("import ", "from "))
+                            or not lines[i].strip()
+                        ):
+                            if lines[i].strip():  # Skip empty lines within import block
+                                import_block.append(lines[i])
+                            i += 1
+
+                        # Process the import block
+                        deduped_imports = self._dedupe_import_block(import_block)
+
+                        # Check if we made changes
+                        if deduped_imports != import_block:
+                            modified = True
+
+                        # Add the processed imports
+                        new_lines.extend(deduped_imports)
+                    else:
+                        # Not an import line, just add it
+                        new_lines.append(line)
+                        i += 1
+
+                # Write back if modified
+                if modified:
+                    new_content = "\n".join(new_lines)
+                    if new_content and not new_content.endswith("\n"):
+                        new_content += "\n"
+
+                    if self.ast_safe_write(py_file, new_content):
+                        self.log(f"  ✓ Fixed imports in {py_file}")
+
+            except Exception as e:
+                self.log(f"  ⚠️  Error processing {py_file}: {e}")
+                self.error_log.append(f"{py_file}: {e}")
+
+    def _dedupe_import_block(self, block_lines: list[str]) -> list[str]:
+        """
+        Split comma-imports, keep first occurrence of each exact statement,
+        then emit in order:
+            1) stdlib 'import xxx'
+            2) third-party/local 'import xxx'
+            3) stdlib 'from xxx import …'
+            4) third-party/local 'from xxx import …'
+        Original relative order inside each bucket is preserved.
+        """
+        # Basic stdlib modules
+        stdlib = {
+            "abc",
+            "argparse",
+            "ast",
+            "asyncio",
+            "base64",
+            "bisect",
+            "collections",
+            "contextlib",
+            "copy",
+            "csv",
+            "datetime",
+            "decimal",
+            "email",
+            "enum",
+            "functools",
+            "hashlib",
+            "importlib",
+            "io",
+            "itertools",
+            "json",
+            "logging",
+            "math",
+            "os",
+            "pathlib",
+            "pickle",
+            "re",
+            "shutil",
+            "sqlite3",
+            "string",
+            "subprocess",
+            "sys",
+            "tempfile",
+            "threading",
+            "time",
+            "typing",
+            "unittest",
+            "urllib",
+            "uuid",
+            "warnings",
+            "weakref",
+            "xml",
+            "zipfile",
+        }
+
+        buckets = {k: [] for k in ("imp_std", "imp_oth", "from_std", "from_oth")}
+        seen_stmt: set[str] = set()  # exact statements we've seen
+        module_order: list[tuple[str, bool]] = []  # [(base_module, has_alias), ...]
+        module_lines: dict[tuple[str, bool], str] = {}  # (base, has_alias) -> line
+
+        for raw in block_lines:
+            code, *comment = raw.split("#", 1)
+            comment = f"#{comment[0].rstrip()}" if comment else ""
+            code = code.rstrip()
+
+            # split comma-import only for plain import
+            if code.startswith("import "):
+                for part in code[len("import ") :].split(","):
+                    part = part.strip()
+                    stmt = f"import {part}"
+
+                    if stmt in seen_stmt:
+                        continue  # exact duplicate
+
+                    # Split module and alias
+                    if " as " in part:
+                        base = part.split(" as ")[0].strip()
+                        has_alias = True
+                    else:
+                        base = part
+                        has_alias = False
+
+                    # Track order of first occurrence
+                    key = (base, has_alias)
+                    if key not in module_lines:
+                        module_order.append(key)
+                        line = stmt + (f"  {comment}" if comment else "")
+                        module_lines[key] = line
+                        comment = ""  # attach comment only once
+
+                    seen_stmt.add(stmt)
+
+            else:  # from-import line
+                if code not in seen_stmt:
+                    seen_stmt.add(code)
+                    # Extract module name from "from X import ..."
+                    parts = code.split()
+                    if len(parts) >= 2:
+                        mod = parts[1].split(".")[0]
+                        bucket = "from_std" if mod in stdlib else "from_oth"
+                        buckets[bucket].append(
+                            f"{code}{'  '+comment if comment else ''}"
+                        )
+
+        # Now emit imports in the right order: plain imports before aliases
+        # First pass: emit plain imports
+        for base, has_alias in module_order:
+            if not has_alias:
+                mod_name = base.split(".")[0]
+                bucket = "imp_std" if mod_name in stdlib else "imp_oth"
+                buckets[bucket].append(module_lines[(base, has_alias)])
+
+        # Second pass: emit aliased imports
+        for base, has_alias in module_order:
+            if has_alias:
+                mod_name = base.split(".")[0]
+                bucket = "imp_std" if mod_name in stdlib else "imp_oth"
+                buckets[bucket].append(module_lines[(base, has_alias)])
+
+        result = (
+            buckets["imp_std"]
+            + buckets["imp_oth"]
+            + buckets["from_std"]
+            + buckets["from_oth"]
+        )
+        return result
+
+    def _dedupe_and_sort_import_block(self, block_lines: list[str]) -> list[str]:
+        """Deduplicate and sort imports, grouping by type."""
+        # First deduplicate
+        deduped = self._dedupe_import_block(block_lines)
+
+        # Then sort into groups
+        stdlib = []
+        third_party = []
+        local = []
+
+        # Known stdlib modules (Python 3.11)
+        stdlib_modules = {
+            "abc",
+            "argparse",
+            "ast",
+            "asyncio",
+            "base64",
+            "binascii",
+            "bisect",
+            "builtins",
+            "bz2",
+            "calendar",
+            "cmath",
+            "cmd",
+            "code",
+            "codecs",
+            "collections",
+            "colorsys",
+            "concurrent",
+            "configparser",
+            "contextlib",
+            "copy",
+            "copyreg",
+            "csv",
+            "ctypes",
+            "curses",
+            "dataclasses",
+            "datetime",
+            "dbm",
+            "decimal",
+            "difflib",
+            "dis",
+            "doctest",
+            "email",
+            "encodings",
+            "enum",
+            "errno",
+            "faulthandler",
+            "fcntl",
+            "filecmp",
+            "fileinput",
+            "fnmatch",
+            "fractions",
+            "ftplib",
+            "functools",
+            "gc",
+            "getopt",
+            "getpass",
+            "gettext",
+            "glob",
+            "graphlib",
+            "grp",
+            "gzip",
+            "hashlib",
+            "heapq",
+            "hmac",
+            "html",
+            "http",
+            "imaplib",
+            "imghdr",
+            "imp",
+            "importlib",
+            "inspect",
+            "io",
+            "ipaddress",
+            "itertools",
+            "json",
+            "keyword",
+            "linecache",
+            "locale",
+            "logging",
+            "lzma",
+            "mailbox",
+            "mailcap",
+            "marshal",
+            "math",
+            "mimetypes",
+            "mmap",
+            "modulefinder",
+            "multiprocessing",
+            "netrc",
+            "nntplib",
+            "numbers",
+            "operator",
+            "optparse",
+            "os",
+            "pathlib",
+            "pdb",
+            "pickle",
+            "pickletools",
+            "pipes",
+            "pkgutil",
+            "platform",
+            "plistlib",
+            "poplib",
+            "posix",
+            "pprint",
+            "profile",
+            "pstats",
+            "pty",
+            "pwd",
+            "py_compile",
+            "pyclbr",
+            "pydoc",
+            "queue",
+            "quopri",
+            "random",
+            "re",
+            "readline",
+            "reprlib",
+            "resource",
+            "rlcompleter",
+            "runpy",
+            "sched",
+            "secrets",
+            "select",
+            "selectors",
+            "shelve",
+            "shlex",
+            "shutil",
+            "signal",
+            "site",
+            "smtpd",
+            "smtplib",
+            "sndhdr",
+            "socket",
+            "socketserver",
+            "spwd",
+            "sqlite3",
+            "ssl",
+            "stat",
+            "statistics",
+            "string",
+            "stringprep",
+            "struct",
+            "subprocess",
+            "sunau",
+            "symtable",
+            "sys",
+            "sysconfig",
+            "syslog",
+            "tabnanny",
+            "tarfile",
+            "telnetlib",
+            "tempfile",
+            "termios",
+            "test",
+            "textwrap",
+            "threading",
+            "time",
+            "timeit",
+            "tkinter",
+            "token",
+            "tokenize",
+            "tomllib",
+            "trace",
+            "traceback",
+            "tracemalloc",
+            "tty",
+            "turtle",
+            "types",
+            "typing",
+            "unicodedata",
+            "unittest",
+            "urllib",
+            "uu",
+            "uuid",
+            "venv",
+            "warnings",
+            "wave",
+            "weakref",
+            "webbrowser",
+            "winreg",
+            "winsound",
+            "wsgiref",
+            "xdrlib",
+            "xml",
+            "xmlrpc",
+            "zipapp",
+            "zipfile",
+            "zipimport",
+            "zlib",
+            "zoneinfo",
+            "__future__",
+        }
+
+        for line in deduped:
+            # Extract the base module name
+            if line.strip().startswith("import "):
+                module = line.strip()[7:].split(" as ")[0].split(".")[0]
+            elif line.strip().startswith("from "):
+                module = line.strip()[5:].split(" import ")[0].split(".")[0]
+            else:
+                local.append(line)
+                continue
+
+            # Categorize
+            if module in stdlib_modules:
+                stdlib.append(line)
+            elif module.startswith("."):
+                local.append(line)
+            else:
+                third_party.append(line)
+
+        # Sort within each group
+        # Use stable sort to preserve relative order of imports with same module
+        def sort_key(line):
+            stripped = line.strip()
+            # Put regular imports before from imports
+            if stripped.startswith("import "):
+                prefix = "0"
+                module = stripped[7:].split(" as ")[0]
+            else:  # from imports
+                prefix = "1"
+                module = stripped[5:].split(" import ")[0]
+            return (prefix, module.lower())
+
+        stdlib.sort(key=sort_key)
+        third_party.sort(key=sort_key)
+        local.sort(key=sort_key)
+
+        # Combine with blank lines between groups
+        result = []
+        if stdlib:
+            result.extend(stdlib)
+        if third_party:
+            if result:
+                result.append("")  # Blank line
+            result.extend(third_party)
+        if local:
+            if result:
+                result.append("")  # Blank line
+            result.extend(local)
+
+        return result
+
+    def fix_docstrings(self) -> None:  # noqa: C901
+        """Normalize triple quotes and proper indentation."""
         self.log("Fixing docstrings...")
+
+        import re
+
+        # Directories to skip
+        skip_dirs = {"migrations", "proto", "static", "__pycache__", ".venv", "venv"}
+
+        for py_file in self.iter_python_files():
+            # Skip files in binary/generated directories
+            if any(part in skip_dirs for part in py_file.parts):
+                continue
+
+            # Skip .pyi stub files
+            if py_file.suffix == ".pyi":
+                continue
+
+            try:
+                content = py_file.read_text(encoding="utf-8")
+                modified = False
+
+                # Replace ''' with """ (but not in raw strings)
+                def replace_single_quotes(match):
+                    if match.group(0).startswith("r"):
+                        return match.group(0)  # Skip raw strings
+                    return '"""' + match.group(1) + '"""'
+
+                new_content = re.sub(
+                    r"'''(.*?)'''", replace_single_quotes, content, flags=re.DOTALL
+                )
+                if new_content != content:
+                    content = new_content
+                    modified = True
+
+                # Process line by line for docstring transformations
+                lines = content.splitlines()
+                new_lines = []
+                i = 0
+
+                while i < len(lines):
+                    line = lines[i]
+                    stripped = line.strip()
+
+                    # Check for one-line docstring
+                    if (
+                        '"""' in line
+                        and line.count('"""') == 2
+                        and not line.strip().startswith('r"""')
+                    ):
+                        # Extract indent and docstring content
+                        indent = line[: len(line) - len(line.lstrip())]
+
+                        # Check if it's > 72 chars
+                        if len(line) > 72:
+                            # Extract the docstring content
+                            start_idx = line.find('"""') + 3
+                            end_idx = line.rfind('"""')
+                            doc_content = line[start_idx:end_idx]
+
+                            # Convert to multi-line
+                            new_lines.append(indent + '"""')
+                            new_lines.append(indent + doc_content)
+                            new_lines.append(indent + '"""')
+                            modified = True
+                            i += 1
+                            continue
+
+                    # Check for multi-line docstring start
+                    elif stripped == '"""' or (
+                        stripped.startswith('"""') and not stripped.endswith('"""')
+                    ):
+                        # This is the start of a multi-line docstring
+                        indent = line[: len(line) - len(line.lstrip())]
+                        new_lines.append(line)
+                        i += 1
+
+                        # Collect the docstring body
+                        while i < len(lines):
+                            line = lines[i]
+                            if '"""' in line:
+                                # Found closing quotes
+                                if line.strip() == '"""':
+                                    # Already on its own line - good
+                                    new_lines.append(line)
+                                else:
+                                    # Closing quotes share line with content
+                                    content_before_quotes = line[
+                                        : line.rfind('"""')
+                                    ].rstrip()
+                                    if content_before_quotes:
+                                        new_lines.append(content_before_quotes)
+                                    new_lines.append(indent + '"""')
+                                    modified = True
+                                i += 1
+                                break
+                            else:
+                                new_lines.append(line)
+                                i += 1
+                        continue
+
+                    # Regular line
+                    new_lines.append(line)
+                    i += 1
+
+                if modified:
+                    new_content = "\n".join(new_lines)
+                    if new_content and not new_content.endswith("\n"):
+                        new_content += "\n"
+
+                    if self.ast_safe_write(py_file, new_content):
+                        self.log(f"  ✓ Fixed docstrings in {py_file}")
+
+            except Exception as e:
+                self.log(f"  ⚠️  Error processing {py_file}: {e}")
+                self.error_log.append(f"{py_file}: {e}")
 
     def fix_whitespace(self) -> None:  # noqa: C901
         """Strip trailing WS, convert tabs → 4 spaces."""
@@ -498,13 +1046,257 @@ class MasterCleanup:
 
     def run_black(self) -> None:
         """Run black formatter."""
-        # Placeholder for Phase 8a
         self.log("Running black...")
+
+        # Skip if in dry-run or skip-shell mode
+        if self.dry_run or self.skip_shell:
+            self.log("  💡 Skipping black in dry-run/skip-shell mode")
+            return
+
+        # Check if black is available
+        black_check = self.safe_run(["which", "black"], capture_output=True)
+        if black_check.returncode != 0:
+            self.log("  ⚠️  black not found - skipping")
+            return
+
+        # Run black on the target path
+        cmd = ["black", str(self.target_path)]
+        result = self.safe_run(cmd, capture_output=True, text=True)
+
+        if result.returncode == 0:
+            self.log("  ✓ black formatting complete")
+            # Parse output for statistics
+            if result.stdout:
+                for line in result.stdout.splitlines():
+                    if "file" in line and "reformatted" in line:
+                        self.log(f"    {line}")
+        else:
+            self.log(f"  ⚠️  black failed: {result.stderr}")
+            self.error_log.append(f"black: {result.stderr}")
 
     def run_isort(self) -> None:
         """Run isort formatter."""
-        # Placeholder for Phase 8b
         self.log("Running isort...")
+
+        # Skip if in dry-run or skip-shell mode
+        if self.dry_run or self.skip_shell:
+            self.log("  💡 Skipping isort in dry-run/skip-shell mode")
+            return
+
+        # Check if isort is available
+        isort_check = self.safe_run(["which", "isort"], capture_output=True)
+        if isort_check.returncode != 0:
+            self.log("  ⚠️  isort not found - skipping")
+            return
+
+        # Run isort on the target path
+        cmd = ["isort", str(self.target_path)]
+        result = self.safe_run(cmd, capture_output=True, text=True)
+
+        if result.returncode == 0:
+            self.log("  ✓ isort formatting complete")
+            # Parse output for statistics
+            if result.stdout:
+                for line in result.stdout.splitlines():
+                    if "Fixing" in line or "file" in line:
+                        self.log(f"    {line}")
+        else:
+            self.log(f"  ⚠️  isort failed: {result.stderr}")
+            self.error_log.append(f"isort: {result.stderr}")
+
+    def ast_empty_body_sweep(self) -> None:  # noqa: C901
+        """Catch any empty bodies that Phase 2 heuristics missed using AST."""
+        self.log("Running AST empty body sweep...")
+
+        for py_file in self.iter_python_files():
+            try:
+                content = py_file.read_text(encoding="utf-8")
+                lines = content.splitlines()
+                modified = False
+
+                # Parse with AST to find truly empty functions/classes
+                try:
+                    tree = ast.parse(content)
+                except SyntaxError:
+                    # Can't parse - might have incomplete functions
+                    # Fall back to line-based detection for these edge cases
+                    self.log(f"  ⚠️  SyntaxError parsing {py_file}, using fallback")
+
+                    # Simple line-based detection for truly empty functions
+                    i = 0
+                    while i < len(lines):
+                        line = lines[i]
+                        stripped = line.strip()
+
+                        # Check for function/class definitions ending with :
+                        if stripped.startswith(
+                            ("def ", "async def ", "class ")
+                        ) and stripped.endswith(":"):
+
+                            indent = len(line) - len(line.lstrip())
+
+                            # Check if there's any content after this line
+                            j = i + 1
+                            while j < len(lines) and not lines[j].strip():
+                                j += 1
+
+                            # If we've reached end or next non-blank has same/less indent
+                            if j >= len(lines):
+                                # Insert pass after the def line
+                                pass_line = " " * (indent + 4) + "pass"
+                                lines.insert(i + 1, pass_line)
+                                modified = True
+                                i += 2  # Skip the inserted line
+                                continue
+                            else:
+                                next_line = lines[j]
+                                next_indent = len(next_line) - len(next_line.lstrip())
+                                if next_indent <= indent:
+                                    # Empty body
+                                    pass_line = " " * (indent + 4) + "pass"
+                                    lines.insert(i + 1, pass_line)
+                                    modified = True
+                                    i += 2  # Skip the inserted line
+                                    continue
+
+                        i += 1
+
+                    # Write back if modified
+                    if modified:
+                        new_content = "\n".join(lines)
+                        if new_content and not new_content.endswith("\n"):
+                            new_content += "\n"
+
+                        if self.ast_safe_write(py_file, new_content):
+                            self.log(f"  ✓ Fixed empty bodies in {py_file}")
+
+                    continue  # Skip AST processing for this file
+
+                # Define what constitutes an empty body
+                TARGETS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+                def _body_is_runtime_empty(body: list[ast.stmt]) -> bool:
+                    """True if body has no executable statements."""
+                    if not body:
+                        return True  # completely empty
+                    for stmt in body:
+                        # Ignore nested defs/classes, docstrings, ellipsis
+                        if isinstance(stmt, TARGETS):
+                            continue
+                        if isinstance(stmt, ast.Expr):
+                            # Check for docstring
+                            if isinstance(stmt.value, (ast.Str, ast.Constant)):
+                                if isinstance(stmt.value, ast.Constant) and isinstance(
+                                    stmt.value.value, str
+                                ):
+                                    continue  # docstring
+                                elif isinstance(stmt.value, ast.Str):
+                                    continue  # docstring (older AST)
+                            # Check for ellipsis
+                            elif isinstance(stmt.value, ast.Ellipsis):
+                                return False  # has ellipsis, don't add pass
+                            elif (
+                                isinstance(stmt.value, ast.Constant)
+                                and stmt.value.value is ...
+                            ):
+                                return False  # has ellipsis (newer AST)
+                        if isinstance(stmt, ast.Pass):
+                            return False  # already has pass
+                        # Found real code
+                        return False
+                    return True
+
+                # Collect AST nodes that need pass statements
+                empty_nodes = []
+
+                class EmptyNodeCollector(ast.NodeVisitor):
+                    def visit_FunctionDef(self, node):
+                        if _body_is_runtime_empty(node.body):
+                            empty_nodes.append(node)
+                        self.generic_visit(node)
+
+                    def visit_AsyncFunctionDef(self, node):
+                        if _body_is_runtime_empty(node.body):
+                            empty_nodes.append(node)
+                        self.generic_visit(node)
+
+                    def visit_ClassDef(self, node):
+                        # Check if only has docstring
+                        has_only_docstring = (
+                            len(node.body) == 1
+                            and isinstance(node.body[0], ast.Expr)
+                            and isinstance(node.body[0].value, (ast.Str, ast.Constant))
+                        )
+                        if not node.body or has_only_docstring:
+                            empty_nodes.append(node)
+                        self.generic_visit(node)
+
+                collector = EmptyNodeCollector()
+                collector.visit(tree)
+
+                # Calculate where to insert pass for each empty node
+                insertions = []
+                for node in empty_nodes:
+                    # Determine insertion line
+                    if hasattr(node, "body") and node.body:
+                        # Insert after the last item in the body
+                        last = node.body[-1]
+                        if hasattr(last, "end_lineno"):
+                            insert_line = last.end_lineno + 1
+                        else:
+                            insert_line = node.lineno + 1
+                    else:
+                        # Body is completely empty, insert right after the def/class line
+                        insert_line = node.lineno + 1
+
+                    # Determine indentation
+                    if hasattr(node, "col_offset"):
+                        indent = node.col_offset + 4
+                    else:
+                        # Fallback: find the line and calculate indent
+                        if node.lineno <= len(lines):
+                            header_line = lines[node.lineno - 1]
+                            indent = len(header_line) - len(header_line.lstrip()) + 4
+                        else:
+                            indent = 4
+
+                    insertions.append((insert_line, indent))
+
+                # Sort insertions by line number (descending) to avoid offset issues
+                insertions.sort(reverse=True)
+
+                # Insert pass statements
+                for insert_line, indent in insertions:
+                    # Convert to 0-based index
+                    idx = insert_line - 1
+
+                    # Make sure we're not out of bounds
+                    if idx > len(lines):
+                        idx = len(lines)
+
+                    # Check if there's already a pass or ellipsis at or near this location
+                    has_pass = False
+                    if 0 <= idx < len(lines):
+                        line_to_check = lines[idx].strip()
+                        if line_to_check in ("pass", "..."):
+                            has_pass = True
+
+                    if not has_pass:
+                        pass_line = " " * indent + "pass"
+                        lines.insert(idx, pass_line)
+                        modified = True
+
+                if modified:
+                    new_content = "\n".join(lines)
+                    if new_content and not new_content.endswith("\n"):
+                        new_content += "\n"
+
+                    if self.ast_safe_write(py_file, new_content):
+                        self.log(f"  ✓ Fixed empty bodies in {py_file}")
+
+            except Exception as e:
+                self.log(f"  ⚠️  Error processing {py_file}: {e}")
+                self.error_log.append(f"{py_file}: {e}")
 
     def run(self) -> None:
         """Execute all phases in order."""
@@ -551,11 +1343,11 @@ class MasterCleanup:
             ("fix_control_block_colons", self.fix_control_block_colons),
             ("insert_missing_pass", self.insert_missing_pass),
             ("fix_whitespace", self.fix_whitespace),
-            # Future phases will be added here
-            # ("fix_imports", self.fix_imports),
-            # ("fix_docstrings", self.fix_docstrings),
-            # ("run_black", self.run_black),
-            # ("run_isort", self.run_isort),
+            ("fix_imports", self.fix_imports),
+            ("fix_docstrings", self.fix_docstrings),
+            ("ast_empty_body_sweep", self.ast_empty_body_sweep),
+            ("run_black", self.run_black),
+            ("run_isort", self.run_isort),
         ]
 
         # Execute phases
