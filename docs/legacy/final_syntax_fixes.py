@@ -3,7 +3,6 @@
 
 from pathlib import Path
 
-
 # File 1: fix_and_test_components.py - line 5 has unexpected indent
 fix1 = """#!/usr/bin/env python3
 \"\"\"

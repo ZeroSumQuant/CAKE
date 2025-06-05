@@ -10,6 +10,18 @@
 
 CAKE acts as an autonomous "operator" that watches, intervenes, and recovers from errors in real-time. It's designed to achieve **zero-escalation autonomy** - resolving all failures without paging humans.
 
+## 📁 Repository Layout
+
+```
+├── cake/         # Main CAKE application code
+├── icing/        # Repository cleanup helper (pip install -e icing/)
+├── tests/        # Test suite for CAKE
+├── docs/         # Documentation and specifications
+├── scripts/      # Utility scripts and tools
+├── .github/      # CI/CD workflows
+└── README.md     # This file
+```
+
 ## 🏗️ Architecture
 
 CAKE uses a single-process, component-based architecture:

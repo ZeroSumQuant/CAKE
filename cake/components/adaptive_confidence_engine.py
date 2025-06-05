@@ -110,7 +110,9 @@ class ContextFeatureExtractor:
         "stage": lambda ctx: ctx.get("stage", "unknown"),
         "error_type": lambda ctx: extract_error_type(ctx.get("error", "")),
         "failure_count": lambda ctx: min(ctx.get("failure_count", 0), 10),  # Cap at 10
-        "cost_ratio": lambda ctx: min(ctx.get("cost", 0) / max(ctx.get("budget", 1), 1), 2.0),
+        "cost_ratio": lambda ctx: min(
+            ctx.get("cost", 0) / max(ctx.get("budget", 1), 1), 2.0
+        ),
         "domain": lambda ctx: ctx.get("domain", "general"),
         "task_complexity": lambda ctx: estimate_task_complexity(ctx),
         "time_of_day": lambda ctx: datetime.now().hour // 6,  # 0-3 (6hr buckets)
@@ -151,8 +153,12 @@ class ContextFeatureExtractor:
         key_features = {
             "stage": features.get("stage"),
             "error_type": features.get("error_type"),
-            "failure_bucket": self._bucket_value(features.get("failure_count", 0), [0, 1, 3, 5]),
-            "cost_bucket": self._bucket_value(features.get("cost_ratio", 0), [0, 0.3, 0.7, 1.0]),
+            "failure_bucket": self._bucket_value(
+                features.get("failure_count", 0), [0, 1, 3, 5]
+            ),
+            "cost_bucket": self._bucket_value(
+                features.get("cost_ratio", 0), [0, 0.3, 0.7, 1.0]
+            ),
             "complexity_bucket": self._bucket_value(
                 features.get("task_complexity", 0), [0, 0.3, 0.7, 1.0]
             ),
@@ -160,7 +166,9 @@ class ContextFeatureExtractor:
 
         # Create deterministic hash
         signature_str = json.dumps(key_features, sort_keys=True)
-        return hashlib.md5(signature_str.encode(), usedforsecurity=False).hexdigest()[:12]
+        return hashlib.md5(signature_str.encode(), usedforsecurity=False).hexdigest()[
+            :12
+        ]
 
     def _bucket_value(self, value: float, buckets: List[float]) -> str:
         """Bucket continuous values for pattern matching."""
@@ -239,7 +247,9 @@ class BayesianConfidenceUpdater:
 
         # Blend with base confidence (reduces extreme adjustments)
         blend_factor = min(len(outcomes) / 10.0, 0.8)  # Max 80% historical influence
-        updated_confidence = (1 - blend_factor) * base_confidence + blend_factor * posterior_mean
+        updated_confidence = (
+            1 - blend_factor
+        ) * base_confidence + blend_factor * posterior_mean
 
         return max(0.01, min(0.99, updated_confidence)), variance
 
@@ -315,13 +325,16 @@ class PerformanceTracker:
 
         success_rate = stats["successful_decisions"] / stats["total_decisions"]
         avg_confidence_accuracy = (
-            statistics.mean(stats["confidence_accuracy"]) if stats["confidence_accuracy"] else 0.5
+            statistics.mean(stats["confidence_accuracy"])
+            if stats["confidence_accuracy"]
+            else 0.5
         )
 
         # Recent trend (last 10 decisions)
         recent_outcomes = list(stats["recent_outcomes"])[-10:]
         recent_success_rate = (
-            sum(1 for o in recent_outcomes if o == OutcomeType.SUCCESS) / len(recent_outcomes)
+            sum(1 for o in recent_outcomes if o == OutcomeType.SUCCESS)
+            / len(recent_outcomes)
             if recent_outcomes
             else 0.5
         )
@@ -336,13 +349,17 @@ class PerformanceTracker:
             "trend": "improving" if recent_success_rate > success_rate else "declining",
         }
 
-    def _update_average(self, current_avg: float, new_value: float, count: int) -> float:
+    def _update_average(
+        self, current_avg: float, new_value: float, count: int
+    ) -> float:
         """Update running average."""
         return ((current_avg * (count - 1)) + new_value) / count
 
     def _update_global_calibration(self):
         """Update global confidence calibration factor."""
-        if self.global_metrics["total_decisions"] % 10 == 0:  # Update every 10 decisions
+        if (
+            self.global_metrics["total_decisions"] % 10 == 0
+        ):  # Update every 10 decisions
             # Calculate overall confidence accuracy
             all_accuracies = []
             for stats in self.strategy_performance.values():
@@ -351,7 +368,9 @@ class PerformanceTracker:
             if all_accuracies:
                 avg_accuracy = statistics.mean(all_accuracies)
                 # Adjust calibration (lower accuracy = need to be more conservative)
-                self.global_metrics["confidence_calibration"] = 0.5 + (avg_accuracy * 0.5)
+                self.global_metrics["confidence_calibration"] = 0.5 + (
+                    avg_accuracy * 0.5
+                )
 
 
 class AdaptiveConfidenceEngine:
@@ -442,11 +461,15 @@ class AdaptiveConfidenceEngine:
         pattern_signature = self.feature_extractor.generate_pattern_signature(features)
 
         # Get similar historical outcomes
-        similar_outcomes = self._get_similar_outcomes(pattern_signature, decision_action)
+        similar_outcomes = self._get_similar_outcomes(
+            pattern_signature, decision_action
+        )
 
         # Calculate context similarity and update confidence
         if similar_outcomes:
-            context_similarity = self._calculate_context_similarity(features, similar_outcomes)
+            context_similarity = self._calculate_context_similarity(
+                features, similar_outcomes
+            )
             adapted_confidence, variance = self.bayesian_updater.update_confidence(
                 base_confidence, similar_outcomes, context_similarity
             )
@@ -459,7 +482,9 @@ class AdaptiveConfidenceEngine:
         adapted_confidence *= calibration
 
         # Apply strategy-specific adjustments
-        strategy_performance = self.performance_tracker.get_strategy_performance(decision_action)
+        strategy_performance = self.performance_tracker.get_strategy_performance(
+            decision_action
+        )
         strategy_adjustment = self._calculate_strategy_adjustment(strategy_performance)
         adapted_confidence *= strategy_adjustment
 
@@ -467,7 +492,9 @@ class AdaptiveConfidenceEngine:
         adapted_confidence = max(0.01, min(0.99, adapted_confidence))
 
         # Update or create pattern
-        self._update_pattern(pattern_signature, features, adapted_confidence, similar_outcomes)
+        self._update_pattern(
+            pattern_signature, features, adapted_confidence, similar_outcomes
+        )
 
         # Generate adaptation metadata
         adaptation_metadata = {
@@ -538,7 +565,9 @@ class AdaptiveConfidenceEngine:
             cost_impact=cost_impact,
             confidence_accuracy=confidence_accuracy,
             context_hash=context_hash,
-            lessons_learned=self._extract_lessons(outcome_type, context, success_metrics),
+            lessons_learned=self._extract_lessons(
+                outcome_type, context, success_metrics
+            ),
             metadata={
                 "decision_action": decision_action,
                 "original_confidence": original_confidence,
@@ -608,7 +637,9 @@ class AdaptiveConfidenceEngine:
 
         return statistics.mean(similarities)
 
-    def _feature_similarity(self, features1: Dict[str, Any], features2: Dict[str, Any]) -> float:
+    def _feature_similarity(
+        self, features1: Dict[str, Any], features2: Dict[str, Any]
+    ) -> float:
         """Calculate similarity between two feature sets."""
         if not features1 or not features2:
             return 0.0
@@ -684,7 +715,9 @@ class AdaptiveConfidenceEngine:
         if outcome_type == OutcomeType.FAILURE:
             lessons["failure_lesson"] = "Strategy failed in this context"
             if context.get("failure_count", 0) > 3:
-                lessons["escalation_lesson"] = "Should escalate sooner with high failure count"
+                lessons["escalation_lesson"] = (
+                    "Should escalate sooner with high failure count"
+                )
 
         elif outcome_type == OutcomeType.SUCCESS:
             lessons["success_lesson"] = "Strategy worked well in this context"
@@ -707,13 +740,17 @@ class AdaptiveConfidenceEngine:
 
             # Update with exponential moving average
             alpha = 0.1  # Learning rate
-            pattern.base_confidence = (1 - alpha) * pattern.base_confidence + alpha * confidence
+            pattern.base_confidence = (
+                1 - alpha
+            ) * pattern.base_confidence + alpha * confidence
 
             if outcomes:
                 success_rate = sum(
                     1 for o in outcomes if o.outcome_type == OutcomeType.SUCCESS
                 ) / len(outcomes)
-                pattern.success_rate = (1 - alpha) * pattern.success_rate + alpha * success_rate
+                pattern.success_rate = (
+                    1 - alpha
+                ) * pattern.success_rate + alpha * success_rate
 
             pattern.last_updated = datetime.now()
         else:
@@ -743,7 +780,9 @@ class AdaptiveConfidenceEngine:
             actual_success = self._outcome_to_success_score(
                 outcome.outcome_type, outcome.success_metrics
             )
-            pattern.success_rate = (1 - alpha) * pattern.success_rate + alpha * actual_success
+            pattern.success_rate = (
+                1 - alpha
+            ) * pattern.success_rate + alpha * actual_success
 
             # Update variance
             error = abs(pattern.base_confidence - actual_success)
@@ -794,7 +833,9 @@ class AdaptiveConfidenceEngine:
                     1 for o in outcomes if o.outcome_type == OutcomeType.SUCCESS
                 ) / len(outcomes)
                 if success_rate > 0.8:
-                    reasoning_parts.append(f"due to {success_rate:.0%} historical success rate")
+                    reasoning_parts.append(
+                        f"due to {success_rate:.0%} historical success rate"
+                    )
         else:
             reasoning_parts.append("Decreased confidence")
             if outcomes:
@@ -804,7 +845,9 @@ class AdaptiveConfidenceEngine:
                     if o.outcome_type in [OutcomeType.FAILURE, OutcomeType.ABORTED]
                 ) / len(outcomes)
                 if failure_rate > 0.3:
-                    reasoning_parts.append(f"due to {failure_rate:.0%} historical failure rate")
+                    reasoning_parts.append(
+                        f"due to {failure_rate:.0%} historical failure rate"
+                    )
 
         if performance["sample_size"] < 5:
             reasoning_parts.append("(limited historical data)")
@@ -824,7 +867,9 @@ class AdaptiveConfidenceEngine:
             try:
                 with open(patterns_file, "rb") as f:
                     self.confidence_patterns = pickle.load(f)
-                logger.info(f"Loaded {len(self.confidence_patterns)} confidence patterns")
+                logger.info(
+                    f"Loaded {len(self.confidence_patterns)} confidence patterns"
+                )
             except Exception as e:
                 logger.warning(f"Failed to load patterns: {e}")
 
@@ -846,8 +891,12 @@ class AdaptiveConfidenceEngine:
             "pattern_variance": (
                 statistics.variance(success_rates) if len(success_rates) > 1 else 0
             ),
-            "well_established_patterns": sum(1 for count in sample_counts if count >= 10),
-            "global_calibration": self.performance_tracker.global_metrics["confidence_calibration"],
+            "well_established_patterns": sum(
+                1 for count in sample_counts if count >= 10
+            ),
+            "global_calibration": self.performance_tracker.global_metrics[
+                "confidence_calibration"
+            ],
         }
 
     def cleanup_old_data(self, days_to_keep: int = 90):
@@ -901,7 +950,9 @@ def estimate_task_complexity(context: Dict[str, Any]) -> float:
 
     for level, indicators in complexity_indicators.items():
         if any(indicator in task for indicator in indicators):
-            return {"simple": 0.2, "medium": 0.5, "complex": 0.8, "very_complex": 1.0}[level]
+            return {"simple": 0.2, "medium": 0.5, "complex": 0.8, "very_complex": 1.0}[
+                level
+            ]
 
     return 0.5  # Default medium complexity
 
@@ -909,7 +960,9 @@ def estimate_task_complexity(context: Dict[str, Any]) -> float:
 def calculate_resource_pressure(context: Dict[str, Any]) -> float:
     """Calculate resource pressure from cost and token usage."""
     cost_ratio = context.get("cost", 0) / max(context.get("budget", 1), 1)
-    token_ratio = context.get("tokens", 0) / max(context.get("token_limit", 10000), 10000)
+    token_ratio = context.get("tokens", 0) / max(
+        context.get("token_limit", 10000), 10000
+    )
 
     return min((cost_ratio + token_ratio) / 2, 1.0)
 
@@ -967,7 +1020,9 @@ if __name__ == "__main__":
 
             # Get adapted confidence
             base_confidence = 0.8
-            adapted_confidence, metadata = engine.adapt_confidence(action, base_confidence, context)
+            adapted_confidence, metadata = engine.adapt_confidence(
+                action, base_confidence, context
+            )
 
             print(f"  Base confidence: {base_confidence:.3f}")
             print(f"  Adapted confidence: {adapted_confidence:.3f}")
@@ -975,7 +1030,9 @@ if __name__ == "__main__":
             print(f"  Reasoning: {metadata['adaptation_reasoning']}")
 
             # Simulate outcome
-            outcome_type = OutcomeType.SUCCESS if i % 2 == 0 else OutcomeType.PARTIAL_SUCCESS
+            outcome_type = (
+                OutcomeType.SUCCESS if i % 2 == 0 else OutcomeType.PARTIAL_SUCCESS
+            )
 
             engine.record_decision_outcome(
                 decision_id=f"decision_{i+1}",
@@ -985,7 +1042,9 @@ if __name__ == "__main__":
                 context=context,
                 outcome_type=outcome_type,
                 success_metrics={
-                    "convergence_confidence": (0.8 if outcome_type == OutcomeType.SUCCESS else 0.6)
+                    "convergence_confidence": (
+                        0.8 if outcome_type == OutcomeType.SUCCESS else 0.6
+                    )
                 },
                 time_to_resolution=30.0 + i * 10,
                 cost_impact=0.1 + i * 0.05,

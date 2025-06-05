@@ -322,7 +322,8 @@ class ErrorPatternExtractor:
         for pattern_name, pattern_info in self.ERROR_PATTERNS.items():
             self.compiled_patterns[pattern_name] = {
                 "regexes": [
-                    re.compile(p, re.IGNORECASE | re.DOTALL) for p in pattern_info["patterns"]
+                    re.compile(p, re.IGNORECASE | re.DOTALL)
+                    for p in pattern_info["patterns"]
                 ],
                 "metadata": {k: v for k, v in pattern_info.items() if k != "patterns"},
             }
@@ -356,7 +357,9 @@ class ErrorPatternExtractor:
                 "word_count": len(error_message.split()),
                 "has_stack_trace": "traceback" in error_message.lower(),
                 "has_line_numbers": bool(re.search(r"line \d+", error_message)),
-                "has_file_paths": bool(re.search(r"[/\\][\w\-_.]+[/\\]", error_message)),
+                "has_file_paths": bool(
+                    re.search(r"[/\\][\w\-_.]+[/\\]", error_message)
+                ),
                 "extraction_timestamp": datetime.now().isoformat(),
             },
         }
@@ -386,7 +389,9 @@ class ErrorPatternExtractor:
             return python_exceptions.group(1)
 
         # Look for HTTP status codes
-        http_status = re.search(r"(\d{3})\s*(error|status)", error_message, re.IGNORECASE)
+        http_status = re.search(
+            r"(\d{3})\s*(error|status)", error_message, re.IGNORECASE
+        )
         if http_status:
             return f"HTTP{http_status.group(1)}Error"
 
@@ -415,7 +420,9 @@ class ErrorPatternExtractor:
                         "matched_text": match.group(0),
                         "captured_groups": match.groups(),
                         "metadata": pattern_info["metadata"].copy(),
-                        "confidence": self._calculate_pattern_confidence(match, error_message),
+                        "confidence": self._calculate_pattern_confidence(
+                            match, error_message
+                        ),
                     }
                     matches.append(match_info)
 
@@ -438,7 +445,9 @@ class ErrorPatternExtractor:
 
         # Combine and deduplicate
         all_tokens = technical_tokens + quoted_strings + identifiers
-        semantic_tokens = list(set(token.lower() for token in all_tokens if len(token) > 2))
+        semantic_tokens = list(
+            set(token.lower() for token in all_tokens if len(token) > 2)
+        )
 
         return semantic_tokens
 
@@ -456,7 +465,9 @@ class ErrorPatternExtractor:
         }
 
         # Module names (often in quotes after import errors)
-        modules = re.findall(r"module named ['\"]([^'\"]+)['\"]", error_message, re.IGNORECASE)
+        modules = re.findall(
+            r"module named ['\"]([^'\"]+)['\"]", error_message, re.IGNORECASE
+        )
         entities["modules"].extend(modules)
 
         # File paths
@@ -558,7 +569,9 @@ class ErrorPatternExtractor:
             "jest",
             "webpack",
         ]
-        clues["tool_hints"] = [tool for tool in tool_indicators if tool in message_lower]
+        clues["tool_hints"] = [
+            tool for tool in tool_indicators if tool in message_lower
+        ]
 
         # Environment hints
         env_indicators = {
@@ -588,7 +601,9 @@ class ErrorPatternExtractor:
         actionable_elements = []
 
         # Installation suggestions
-        install_matches = re.findall(r"install\s+([a-zA-Z0-9_\-\.]+)", error_message, re.IGNORECASE)
+        install_matches = re.findall(
+            r"install\s+([a-zA-Z0-9_\-\.]+)", error_message, re.IGNORECASE
+        )
         for package in install_matches:
             actionable_elements.append(
                 {
@@ -615,7 +630,9 @@ class ErrorPatternExtractor:
 
         # Permission fixes
         if re.search(r"permission denied", error_message, re.IGNORECASE):
-            file_matches = re.findall(r"['\"]([^'\"]*\.[a-zA-Z0-9]+)['\"]", error_message)
+            file_matches = re.findall(
+                r"['\"]([^'\"]*\.[a-zA-Z0-9]+)['\"]", error_message
+            )
             for file_path in file_matches:
                 actionable_elements.append(
                     {
@@ -661,11 +678,15 @@ class ErrorPatternExtractor:
 
         # Extract symptoms (often early lines in stack trace)
         if len(lines) > 3:
-            hierarchy["symptoms"] = [line.strip() for line in lines[1:3] if line.strip()]
+            hierarchy["symptoms"] = [
+                line.strip() for line in lines[1:3] if line.strip()
+            ]
 
         return hierarchy
 
-    def _calculate_pattern_confidence(self, match: re.Match, full_message: str) -> float:
+    def _calculate_pattern_confidence(
+        self, match: re.Match, full_message: str
+    ) -> float:
         """Calculate confidence in pattern match."""
         base_confidence = 0.7
 
@@ -694,7 +715,9 @@ class ErrorPatternExtractor:
         logger.info(f"Fitting semantic models on {len(error_messages)} error messages")
 
         # Normalize messages for training
-        normalized_messages = [self._normalize_error_message(msg) for msg in error_messages]
+        normalized_messages = [
+            self._normalize_error_message(msg) for msg in error_messages
+        ]
 
         # Fit TF-IDF vectorizer
         try:
@@ -782,12 +805,10 @@ class ErrorSignatureDatabase:
     ) -> ErrorSignature:
         """Create new error signature from features."""
         # Generate signature ID
-        signature_content = (
-            f"{features['error_type']}_{category.name}_{features['normalized_message'][:100]}"
-        )
-        signature_id = hashlib.md5(signature_content.encode(), usedforsecurity=False).hexdigest()[
-            :16
-        ]
+        signature_content = f"{features['error_type']}_{category.name}_{features['normalized_message'][:100]}"
+        signature_id = hashlib.md5(
+            signature_content.encode(), usedforsecurity=False
+        ).hexdigest()[:16]
 
         # Extract semantic tags
         semantic_tags = set(features["semantic_tokens"][:10])  # Top 10 tokens
@@ -795,7 +816,9 @@ class ErrorSignatureDatabase:
         # Build context patterns
         context_patterns = []
         if features["matched_patterns"]:
-            context_patterns = [p["pattern_name"] for p in features["matched_patterns"][:3]]
+            context_patterns = [
+                p["pattern_name"] for p in features["matched_patterns"][:3]
+            ]
 
         # Generate solution hints
         solution_hints = []
@@ -859,7 +882,9 @@ class ErrorSignatureDatabase:
 
         # First, try exact error type match
         error_type = features["error_type"]
-        type_matches = [sig for sig in self.signatures.values() if sig.error_type == error_type]
+        type_matches = [
+            sig for sig in self.signatures.values() if sig.error_type == error_type
+        ]
 
         if not type_matches:
             # Fallback to all signatures
@@ -979,7 +1004,9 @@ class ErrorSignatureDatabase:
             "average_confidence": statistics.mean(
                 sig.confidence for sig in self.signatures.values()
             ),
-            "total_occurrences": sum(sig.occurrence_count for sig in self.signatures.values()),
+            "total_occurrences": sum(
+                sig.occurrence_count for sig in self.signatures.values()
+            ),
         }
 
 
@@ -1176,7 +1203,9 @@ class SemanticErrorClassifier:
             "key_entities": features["technical_entities"],
             "context_clues": features["context_clues"],
             "error_hierarchy": features["error_hierarchy"],
-            "similar_patterns": [p["pattern_name"] for p in features["matched_patterns"]],
+            "similar_patterns": [
+                p["pattern_name"] for p in features["matched_patterns"]
+            ],
             "confidence_factors": self._analyze_confidence_factors(features, signature),
             "complexity_score": self._calculate_complexity_score(features),
         }
@@ -1219,7 +1248,9 @@ class SemanticErrorClassifier:
             suggestions.append(
                 {
                     "action": element["action_type"],
-                    "description": element.get("suggested_command", "No specific command"),
+                    "description": element.get(
+                        "suggested_command", "No specific command"
+                    ),
                     "confidence": element["confidence"],
                     "priority": "high" if element["confidence"] > 0.8 else "medium",
                     "source": "pattern_extraction",
@@ -1375,11 +1406,15 @@ class SemanticErrorClassifier:
         # Domain patterns
         if context and "domain" in context:
             domain = context["domain"]
-            insights["domain_patterns"][domain] = f"This error type is common in {domain} projects"
+            insights["domain_patterns"][
+                domain
+            ] = f"This error type is common in {domain} projects"
 
         # Environment factors
         for env in context_clues.get("environment_hints", []):
-            insights["environment_factors"][env] = f"Environment-specific issue detected for {env}"
+            insights["environment_factors"][
+                env
+            ] = f"Environment-specific issue detected for {env}"
 
         # Timing factors (time of day, etc.)
         current_hour = datetime.now().hour
@@ -1408,7 +1443,9 @@ class SemanticErrorClassifier:
                 # Calculate tag overlap
                 tag_overlap = len(current_tags & other_signature.semantic_tags)
                 if tag_overlap >= 2:  # At least 2 common tags
-                    related.append(f"{other_signature.error_type}: {other_signature.semantic_tags}")
+                    related.append(
+                        f"{other_signature.error_type}: {other_signature.semantic_tags}"
+                    )
 
         return related[:3]  # Top 3 related errors
 
@@ -1433,7 +1470,10 @@ class SemanticErrorClassifier:
             urgency += 0.2  # These block progress
 
         # Increase urgency if error blocks execution
-        if any(hint in ["install_package", "fix_permissions"] for hint in signature.solution_hints):
+        if any(
+            hint in ["install_package", "fix_permissions"]
+            for hint in signature.solution_hints
+        ):
             urgency += 0.1
 
         # Decrease urgency for warnings
@@ -1451,7 +1491,9 @@ class SemanticErrorClassifier:
         # Pattern matching quality
         if features["matched_patterns"]:
             best_pattern = features["matched_patterns"][0]
-            factors["pattern_match"] = f"Strong pattern match: {best_pattern['pattern_name']}"
+            factors["pattern_match"] = (
+                f"Strong pattern match: {best_pattern['pattern_name']}"
+            )
         else:
             factors["pattern_match"] = "No known patterns matched"
 
@@ -1466,7 +1508,9 @@ class SemanticErrorClassifier:
 
         # Error specificity
         if signature.occurrence_count > 10:
-            factors["experience"] = f"Well-known error (seen {signature.occurrence_count} times)"
+            factors["experience"] = (
+                f"Well-known error (seen {signature.occurrence_count} times)"
+            )
         elif signature.occurrence_count > 1:
             factors["experience"] = "Previously encountered error"
         else:
@@ -1483,7 +1527,9 @@ class SemanticErrorClassifier:
         complexity += min(message_length / 1000, 0.3)  # Max 0.3 for length
 
         # Technical entities factor
-        entity_count = sum(len(entities) for entities in features["technical_entities"].values())
+        entity_count = sum(
+            len(entities) for entities in features["technical_entities"].values()
+        )
         complexity += min(entity_count / 20, 0.3)  # Max 0.3 for entities
 
         # Stack trace factor
@@ -1587,7 +1633,9 @@ class SemanticErrorClassifier:
     def export_knowledge(self, export_path: Path):
         """Export learned knowledge for sharing or backup."""
         export_data = {
-            "signatures": [sig.to_dict() for sig in self.signature_db.signatures.values()],
+            "signatures": [
+                sig.to_dict() for sig in self.signature_db.signatures.values()
+            ],
             "patterns": self.extractor.ERROR_PATTERNS,
             "statistics": self.get_classification_statistics(),
             "export_timestamp": datetime.now().isoformat(),
