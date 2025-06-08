@@ -12,7 +12,7 @@ Python: 3.11+
 import hashlib
 import json
 import logging
-import re  # FIX: Added missing import
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -100,7 +100,6 @@ class RecallDB:
     def _init_database(self):
         """Initialize database schema."""
         with self._get_connection() as conn:
-            # FIX: Enable WAL mode for better concurrency
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             # Error records table
@@ -121,7 +120,6 @@ class RecallDB:
             """
             )
 
-            # Indexes for efficient querying
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_error_type_file
@@ -143,7 +141,6 @@ class RecallDB:
             """
             )
 
-            # Pattern violations table
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS pattern_violations (
@@ -165,7 +162,6 @@ class RecallDB:
             """
             )
 
-            # Command history table (for tracking attempted fixes)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS command_history (
@@ -180,8 +176,33 @@ class RecallDB:
                 )
             """
             )
+            conn.commit() # Commit table creation before trying to read schema
 
-            conn.commit()
+            # Log the schema for debugging
+            try:
+                cursor = conn.execute("PRAGMA table_info(error_records);")
+                schema_info = cursor.fetchall()
+                logger.debug(f"Schema for error_records after creation: {schema_info}")
+                is_present = any(col[1] == 'error_message' for col in schema_info)
+                logger.debug(f"Column 'error_message' present in schema after creation: {is_present}")
+                if not is_present:
+                    logger.error("CRITICAL SCHEMA ISSUE: 'error_message' column NOT FOUND in error_records after table creation attempt.")
+            except Exception as e_pragma:
+                logger.error(f"Failed to retrieve schema info for error_records: {e_pragma}", exc_info=True)
+
+            # Log the schema for command_history table for debugging
+            try:
+                cursor = conn.execute("PRAGMA table_info(command_history);")
+                schema_info_cmd = cursor.fetchall()
+                logger.debug(f"Schema for command_history after creation: {schema_info_cmd}")
+                is_error_id_present = any(col[1] == 'error_id' for col in schema_info_cmd)
+                logger.debug(f"Column 'error_id' present in command_history schema after creation: {is_error_id_present}")
+                if not is_error_id_present:
+                    logger.error("CRITICAL SCHEMA ISSUE: 'error_id' column NOT FOUND in command_history after table creation attempt.")
+            except Exception as e_pragma_cmd:
+                logger.error(f"Failed to retrieve schema info for command_history: {e_pragma_cmd}", exc_info=True)
+
+            conn.commit() # Ensure logging transaction is committed if any
 
     @contextmanager
     def _get_connection(self):
@@ -215,53 +236,41 @@ class RecallDB:
 
         Returns:
             Error ID for reference
-        """  # Generate error signature (normalized for matching)
+        """
         signature = self._generate_error_signature(error_type, error_message)
-
-        # Generate unique ID
         error_id = self._generate_id(
             f"{error_type}:{file_path}:{signature}:{datetime.now().isoformat()}"
         )
-
-        # Calculate expiry
         expiry = datetime.now() + timedelta(hours=self.ttl_hours)
+        record_timestamp = datetime.now() # Use a single timestamp for the record
 
-        # Create record
-        record = ErrorRecord(
-            error_id=error_id,
-            error_type=error_type,
-            error_signature=signature,
-            file_path=file_path,
-            line_number=line_number,
-            error_message=error_message,
-            attempted_fix=attempted_fix,
-            context=context or {},
-            timestamp=datetime.now(),
-            expiry=expiry,
-        )
+        # Create record dataclass instance for clarity, though not strictly needed for this insert
+        # record = ErrorRecord(...)
 
-        # Store in database
         with self._lock, self._get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO error_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO error_records (
+                    error_id, error_type, error_signature, file_path, line_number,
+                    error_message, attempted_fix, context, timestamp, expiry
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    record.error_id,
-                    record.error_type,
-                    record.error_signature,
-                    record.file_path,
-                    record.line_number,
-                    record.error_message,
-                    record.attempted_fix,
-                    json.dumps(record.context),
-                    record.timestamp.isoformat(),
-                    record.expiry.isoformat(),
+                    error_id,
+                    error_type,
+                    signature,
+                    file_path,
+                    line_number,
+                    error_message, # This is the critical parameter
+                    attempted_fix,
+                    json.dumps(context or {}), # Ensure context is always a dict then dumped
+                    record_timestamp.isoformat(),
+                    expiry.isoformat(),
                 ),
             )
             conn.commit()
 
-        logger.info("Recorded error: %s in %s", error_type, file_path)
+        logger.info("Recorded error: %s in %s (ID: %s)", error_type, file_path, error_id)
         return error_id
 
     def get_similar_errors(
@@ -281,12 +290,11 @@ class RecallDB:
             List of similar error records
         """
         with self._get_connection() as conn:
-            # Build query
             query = """SELECT * FROM error_records
                 WHERE error_type = ?
                 AND expiry > ?
             """
-            params = [error_type, datetime.now().isoformat()]
+            params: List[Any] = [error_type, datetime.now().isoformat()]
 
             if file_path:
                 query += " AND file_path = ?"
@@ -299,7 +307,7 @@ class RecallDB:
 
             query += " ORDER BY timestamp DESC"
 
-            cursor = conn.execute(query, params)
+            cursor = conn.execute(query, tuple(params)) # Ensure params is a tuple
 
             results = []
             for row in cursor:
@@ -308,29 +316,34 @@ class RecallDB:
                 record_data["timestamp"] = datetime.fromisoformat(
                     record_data["timestamp"]
                 )
+                record_data["expiry"] = datetime.fromisoformat( # Also convert expiry
+                    record_data["expiry"]
+                )
                 results.append(record_data)
 
             return results
 
-    def has_seen_error(
+    def is_repeat_error(
         self,
-        error_type: str,
-        error_message: str,
-        file_path: Optional[str] = None,
+        error_message: str, # Changed from error_type for more specific check
+        file_path: Optional[str] = None, # error_message is more specific than error_type
+        error_type: Optional[str] = None, # Keep error_type for signature generation consistency
         threshold_hours: int = 24,
     ) -> bool:
-        """Check if we've seen this error recently.
+        """Check if we've seen this specific error recently based on signature.
 
         Args:
-            error_type: Type of error
-            error_message: Error message
-            file_path: Optional file path
-            threshold_hours: How far back to look
+            error_message: The full error message.
+            file_path: Optional file path where error occurred.
+            error_type: The general type of the error (e.g., ModuleNotFoundError).
+            threshold_hours: How far back to look.
 
         Returns:
-            True if error was seen within threshold
+            True if error signature was seen within threshold.
         """
-        signature = self._generate_error_signature(error_type, error_message)
+        # Use a more specific error_type if provided, otherwise try to extract from message
+        actual_error_type = error_type if error_type else self._extract_error_type_from_message(error_message)
+        signature = self._generate_error_signature(actual_error_type, error_message)
 
         with self._get_connection() as conn:
             query = """SELECT COUNT(*) FROM error_records
@@ -338,15 +351,14 @@ class RecallDB:
                 AND timestamp > ?
                 AND expiry > ?
             """
-
             cutoff = datetime.now() - timedelta(hours=threshold_hours)
-            params = [signature, cutoff.isoformat(), datetime.now().isoformat()]
+            params: List[Any] = [signature, cutoff.isoformat(), datetime.now().isoformat()]
 
             if file_path:
                 query += " AND file_path = ?"
                 params.append(file_path)
 
-            cursor = conn.execute(query, params)
+            cursor = conn.execute(query, tuple(params))
             count = cursor.fetchone()[0]
 
             return count > 0
@@ -354,40 +366,30 @@ class RecallDB:
     def record_pattern_violation(
         self, pattern_name: str, project: str, file_path: str, details: Dict[str, Any]
     ) -> str:
-        """Record a pattern violation (anti-pattern usage).
-
-        Args:
-            pattern_name: Name of the pattern violated
-            project: Project where it occurred
-            file_path: File containing the violation
-            details: Details about the violation
-
-        Returns:
-            Pattern ID for reference
-        """
+        """Record a pattern violation (anti-pattern usage)."""
         pattern_id = self._generate_id(
             f"{pattern_name}:{project}:{file_path}:{datetime.now().isoformat()}"
         )
-
         expiry = datetime.now() + timedelta(hours=self.ttl_hours)
+        timestamp = datetime.now().isoformat()
 
         with self._lock, self._get_connection() as conn:
             conn.execute(
-                """INSERT INTO pattern_violations VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
+                """INSERT INTO pattern_violations (
+                    pattern_id, pattern_name, project, file_path, details, timestamp, expiry
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     pattern_id,
                     pattern_name,
                     project,
                     file_path,
                     json.dumps(details),
-                    datetime.now().isoformat(),
+                    timestamp,
                     expiry.isoformat(),
                 ),
             )
             conn.commit()
-
-        logger.info("Recorded pattern violation: %s in %s", pattern_name, project)
+        logger.info("Recorded pattern violation: %s in %s (ID: %s)", pattern_name, project, pattern_id)
         return pattern_id
 
     def get_pattern_violations(self, pattern_name: str) -> List[Dict[str, Any]]:
@@ -402,16 +404,13 @@ class RecallDB:
             """,
                 (pattern_name, datetime.now().isoformat()),
             )
-
             results = []
             for row in cursor:
                 violation_data = dict(row)
                 violation_data["details"] = json.loads(violation_data["details"])
-                violation_data["timestamp"] = datetime.fromisoformat(
-                    violation_data["timestamp"]
-                )
+                violation_data["timestamp"] = datetime.fromisoformat(violation_data["timestamp"])
+                violation_data["expiry"] = datetime.fromisoformat(violation_data["expiry"])
                 results.append(violation_data)
-
             return results
 
     def record_command(
@@ -421,49 +420,54 @@ class RecallDB:
         error_id: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Record a command execution attempt.
-
-        Args:
-            command: Command that was executed
-            success: Whether it succeeded
-            error_id: Related error ID if applicable
-            context: Additional context
-
-        Returns:
-            Command ID for reference
-        """
+        """Record a command execution attempt."""
         command_id = self._generate_id(f"{command}:{datetime.now().isoformat()}")
-
         expiry = datetime.now() + timedelta(hours=self.ttl_hours)
+        timestamp = datetime.now().isoformat()
 
         with self._lock, self._get_connection() as conn:
-            conn.execute(
-                """INSERT INTO command_history VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    command_id,
-                    command,
-                    json.dumps(context or {}),
-                    success,
-                    error_id,
-                    datetime.now().isoformat(),
-                    expiry.isoformat(),
-                ),
-            )
-            conn.commit()
+            # Check if error_id column exists
+            cursor = conn.execute("PRAGMA table_info(command_history);")
+            columns = [row[1] for row in cursor.fetchall()]
+            error_id_column_exists = 'error_id' in columns
 
+            if error_id_column_exists:
+                conn.execute(
+                    """INSERT INTO command_history (
+                        command_id, command, context, success, error_id, timestamp, expiry
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        command_id,
+                        command,
+                        json.dumps(context or {}),
+                        success,
+                        error_id, # This will be used
+                        timestamp,
+                        expiry.isoformat(),
+                    ),
+                )
+            else:
+                logger.warning("Outdated 'command_history' schema: 'error_id' column missing. Recording command without error_id linkage.")
+                conn.execute(
+                    """INSERT INTO command_history (
+                        command_id, command, context, success, timestamp, expiry
+                       ) VALUES (?, ?, ?, ?, ?, ?)""", # error_id parameter and column omitted
+                    (
+                        command_id,
+                        command,
+                        json.dumps(context or {}),
+                        success,
+                        # error_id is omitted here
+                        timestamp,
+                        expiry.isoformat(),
+                    ),
+                )
+            conn.commit()
+        logger.info("Recorded command: %s (Success: %s, ID: %s)", command[:100], success, command_id)
         return command_id
 
     def get_failed_fixes(self, error_type: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Get recent failed fix attempts for an error type.
-
-        Args:
-            error_type: Type of error
-            limit: Maximum results to return
-
-        Returns:
-            List of failed fix attempts
-        """
+        """Get recent failed fix attempts for an error type."""
         with self._get_connection() as conn:
             cursor = conn.execute(
                 """SELECT ch.command, ch.context, ch.timestamp, er.error_message
@@ -477,142 +481,87 @@ class RecallDB:
             """,
                 (error_type, datetime.now().isoformat(), limit),
             )
-
             results = []
             for row in cursor:
                 fix_data = dict(row)
                 fix_data["context"] = json.loads(fix_data["context"])
                 fix_data["timestamp"] = datetime.fromisoformat(fix_data["timestamp"])
                 results.append(fix_data)
-
             return results
 
     def cleanup_expired(self) -> int:
-        """Clean up expired records.
-
-        Returns:
-            Number of records cleaned
-        """
+        """Clean up expired records."""
         with self._lock, self._get_connection() as conn:
             now = datetime.now().isoformat()
+            counts = {"errors": 0, "patterns": 0, "commands": 0}
 
-            # Clean error records
             cursor = conn.execute("DELETE FROM error_records WHERE expiry < ?", (now,))
-            error_count = cursor.rowcount
+            counts["errors"] = cursor.rowcount
 
-            # Clean pattern violations
-            cursor = conn.execute(
-                "DELETE FROM pattern_violations WHERE expiry < ?", (now,)
-            )
-            pattern_count = cursor.rowcount
+            cursor = conn.execute("DELETE FROM pattern_violations WHERE expiry < ?", (now,))
+            counts["patterns"] = cursor.rowcount
 
-            # Clean command history
-            cursor = conn.execute(
-                "DELETE FROM command_history WHERE expiry < ?", (now,)
-            )
-            command_count = cursor.rowcount
+            cursor = conn.execute("DELETE FROM command_history WHERE expiry < ?", (now,))
+            counts["commands"] = cursor.rowcount
 
             conn.commit()
-
-            total = error_count + pattern_count + command_count
-            if total > 0:
-                logger.info("Cleaned up %s expired records", total)
-
-            return total
+            total_cleaned = sum(counts.values())
+            if total_cleaned > 0:
+                logger.info(f"Cleaned up {total_cleaned} expired records: {counts}")
+            return total_cleaned
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get database statistics."""
         with self._get_connection() as conn:
-            # Count active records
-            error_count = conn.execute(
-                "SELECT COUNT(*) FROM error_records WHERE expiry > ?",
-                (datetime.now().isoformat(),),
-            ).fetchone()[0]
+            now_iso = datetime.now().isoformat()
+            error_count = conn.execute("SELECT COUNT(*) FROM error_records WHERE expiry > ?", (now_iso,)).fetchone()[0]
+            pattern_count = conn.execute("SELECT COUNT(*) FROM pattern_violations WHERE expiry > ?", (now_iso,)).fetchone()[0]
+            command_count = conn.execute("SELECT COUNT(*) FROM command_history WHERE expiry > ?", (now_iso,)).fetchone()[0]
 
-            pattern_count = conn.execute(
-                "SELECT COUNT(*) FROM pattern_violations WHERE expiry > ?",
-                (datetime.now().isoformat(),),
-            ).fetchone()[0]
-
-            command_count = conn.execute(
-                "SELECT COUNT(*) FROM command_history WHERE expiry > ?",
-                (datetime.now().isoformat(),),
-            ).fetchone()[0]
-
-            # Get most common errors
-            cursor = conn.execute(
-                """
-                SELECT error_type, COUNT(*) as count
-                FROM error_records
-                WHERE expiry > ?
-                GROUP BY error_type
-                ORDER BY count DESC
-                LIMIT 5
-            """,
-                (datetime.now().isoformat(),),
+            common_errors_cursor = conn.execute(
+                "SELECT error_type, COUNT(*) as count FROM error_records WHERE expiry > ? GROUP BY error_type ORDER BY count DESC LIMIT 5", (now_iso,)
             )
+            common_errors = [{"error_type": row["error_type"], "count": row["count"]} for row in common_errors_cursor]
 
-            common_errors = [
-                {"error_type": row["error_type"], "count": row["count"]}
-                for row in cursor
-            ]
-
-            # Get most violated patterns
-            cursor = conn.execute(
-                """SELECT pattern_name, COUNT(*) as count
-                FROM pattern_violations
-                WHERE expiry > ?
-                GROUP BY pattern_name
-                ORDER BY count DESC
-                LIMIT 5
-            """,
-                (datetime.now().isoformat(),),
+            common_patterns_cursor = conn.execute(
+                "SELECT pattern_name, COUNT(*) as count FROM pattern_violations WHERE expiry > ? GROUP BY pattern_name ORDER BY count DESC LIMIT 5", (now_iso,)
             )
-
-            common_patterns = [
-                {"pattern_name": row["pattern_name"], "count": row["count"]}
-                for row in cursor
-            ]
+            common_patterns = [{"pattern_name": row["pattern_name"], "count": row["count"]} for row in common_patterns_cursor]
 
             return {
-                "active_errors": error_count,
-                "active_patterns": pattern_count,
-                "active_commands": command_count,
-                "common_errors": common_errors,
-                "common_patterns": common_patterns,
-                "ttl_hours": self.ttl_hours,
+                "active_errors": error_count, "active_patterns": pattern_count, "active_commands": command_count,
+                "common_errors": common_errors, "common_patterns": common_patterns, "ttl_hours": self.ttl_hours,
             }
 
     def _generate_error_signature(self, error_type: str, error_message: str) -> str:
-        """Generate normalized signature for error matching.
+        """Generate normalized signature for error matching."""
+        signature_parts = [error_type.lower()]
+        normalized_message = error_message.lower()
+        normalized_message = re.sub(r"[/\\][^\s]+(\.\w+)?", "<path>", normalized_message) # More robust path removal
+        normalized_message = re.sub(r"line \d+", "line <n>", normalized_message)
+        normalized_message = re.sub(r"\'[^\']*\'", "'<val>'", normalized_message)
+        normalized_message = re.sub(r'\"[^\"]*\"', '"<val>"', normalized_message)
+        normalized_message = re.sub(r"0x[0-9a-fA-F]+", "<addr>", normalized_message)
+        normalized_message = re.sub(r"\d+", "<num>", normalized_message) # Normalize all numbers
 
-        Removes specific values to create reusable patterns.
-        """
-        signature = f"{error_type}:"
+        # Keep only alphanumeric and basic punctuation for broader matching
+        # This helps group similar errors even if specific values/symbols change
+        normalized_message = re.sub(r"[^a-z0-9\s\<\>\_\-\:\.\,]", "", normalized_message)
+        normalized_message = re.sub(r"\s+", " ", normalized_message).strip() # Consolidate whitespace
 
-        # Normalize the error message
-        normalized = error_message.lower()
-
-        # Remove specific file paths
-        normalized = re.sub(r"[/\\][^\s]+", "<path>", normalized)
-
-        # Remove line numbers
-        normalized = re.sub(r"line \d+", "line <n>", normalized)
-
-        # Remove quoted strings
-        normalized = re.sub(r"'[^']*'", "'<value>'", normalized)
-        normalized = re.sub(r'"[^"]*"', '"<value>"', normalized)
-
-        # Remove memory addresses
-        normalized = re.sub(r"0x[0-9a-fA-F]+", "<addr>", normalized)
-
-        signature += normalized[:200]  # Limit length
-
-        return signature
+        signature_parts.append(normalized_message[:200])
+        return ":".join(signature_parts)
 
     def _generate_id(self, content: str) -> str:
         """Generate unique ID from content."""
-        return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()[:16]
+        return hashlib.md5(content.encode('utf-8'), usedforsecurity=False).hexdigest()[:16]
+
+    def _extract_error_type_from_message(self, error_message: str) -> str:
+        """Basic extraction of error type from a message string if not provided."""
+        match = re.match(r"(\w*Error|\w*Exception)", error_message)
+        if match:
+            return match.group(1)
+        return "UnknownError"
 
 
 class RecallAnalyzer:
@@ -624,7 +573,7 @@ class RecallAnalyzer:
 
     def get_repeat_offenders(self) -> List[Dict[str, Any]]:
         """Find errors that occur repeatedly."""
-        with self.db._get_connection() as conn:
+        with self.db._get_connection() as conn: # Accessing protected member, but this is a closely related class
             cursor = conn.execute(
                 """
                 SELECT error_type, file_path, COUNT(*) as repeat_count,
@@ -637,58 +586,31 @@ class RecallAnalyzer:
             """,
                 (datetime.now().isoformat(),),
             )
-
             results = []
             for row in cursor:
-                results.append(
-                    {
-                        "error_type": row["error_type"],
-                        "file_path": row["file_path"],
-                        "repeat_count": row["repeat_count"],
-                        "fixes_tried": (
-                            row["fixes_tried"].split(" | ")
-                            if row["fixes_tried"]
-                            else []
-                        ),
-                    }
-                )
-
+                results.append(dict(row)) # Convert row to dict
             return results
 
     def get_intervention_suggestions(self) -> List[Dict[str, Any]]:
         """Generate intervention suggestions based on patterns."""
         suggestions = []
-
-        # Check for repeated errors
         repeat_offenders = self.get_repeat_offenders()
         for offender in repeat_offenders:
             if offender["repeat_count"] >= 3:
-                suggestions.append(
-                    {
-                        "type": "escalate",
-                        "reason": (
-                            f"{offender['error_type']} in {offender['file_path']} "
-                            f"failed {offender['repeat_count']} times"
-                        ),
-                        "tried_fixes": offender["fixes_tried"],
-                    }
-                )
+                suggestions.append({
+                    "type": "escalate_repeated_error",
+                    "reason": f"{offender['error_type']} in {offender['file_path']} failed {offender['repeat_count']} times.",
+                    "details": offender,
+                })
 
-        # Check for pattern clusters
         stats = self.db.get_statistics()
-        for pattern in stats["common_patterns"]:
+        for pattern in stats.get("common_patterns", []):
             if pattern["count"] >= 3:
-                suggestions.append(
-                    {
-                        "type": "training_needed",
-                        "reason": (
-                            f"Pattern '{pattern['pattern_name']}' violated "
-                            f"{pattern['count']} times"
-                        ),
-                        "pattern": pattern["pattern_name"],
-                    }
-                )
-
+                suggestions.append({
+                    "type": "address_pattern_violation",
+                    "reason": f"Pattern '{pattern['pattern_name']}' violated {pattern['count']} times.",
+                    "details": pattern,
+                })
         return suggestions
 
 
@@ -696,72 +618,39 @@ class RecallAnalyzer:
 if __name__ == "__main__":
     import tempfile
 
-    # Set up logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    # Create temporary database
     with tempfile.TemporaryDirectory() as temp_dir:
-        db_path = Path(temp_dir) / "recall.db"
-        recall_db = RecallDB(db_path, ttl_hours=24)
+        db_path = Path(temp_dir) / "recall_test.db"
+        logger.info(f"Using temporary RecallDB at: {db_path}")
+        recall_db = RecallDB(db_path, ttl_hours=1) # Short TTL for testing cleanup
 
-        # Record some errors
-        error_id1 = recall_db.record_error(
-            error_type="ModuleNotFoundError",
-            error_message="ModuleNotFoundError: No module named 'requests'",
-            file_path="main.py",
-            line_number=42,
-            attempted_fix="pip install request",  # Note the typo
-            context={"stage": "execute", "task": "API development"},
-        )
+        err_type = "ModuleNotFoundError"
+        err_msg = "ModuleNotFoundError: No module named 'non_existent_package'"
+        file_p = "src/main.py"
 
-        # Record the same error again
-        error_id2 = recall_db.record_error(
-            error_type="ModuleNotFoundError",
-            error_message="ModuleNotFoundError: No module named 'requests'",
-            file_path="main.py",
-            line_number=42,
-            attempted_fix="pip install requests-library",  # Wrong package name
-            context={"stage": "execute", "task": "API development"},
-        )
+        recall_db.record_error(err_type, err_msg, file_p, 10, "pip install non_existent_package", {"task": "task1"})
+        recall_db.record_error(err_type, err_msg, file_p, 10, "pip install non_existent_package --force", {"task": "task2"})
 
-        # Check if we've seen this error
-        seen = recall_db.has_seen_error(
-            "ModuleNotFoundError",
-            "ModuleNotFoundError: No module named 'requests'",
-            "main.py",
-        )
-        print(f"Have we seen this error before? {seen}")
+        is_repeat = recall_db.is_repeat_error(error_message=err_msg, file_path=file_p, error_type=err_type)
+        logger.info(f"Is '{err_msg}' a repeat error in '{file_p}'? {is_repeat}")
 
-        # Get similar errors
-        similar = recall_db.get_similar_errors("ModuleNotFoundError", "main.py")
-        print(f"\nFound {len(similar)} similar errors:")
-        for error in similar:
-            print(f"  - {error['timestamp']}: {error['attempted_fix']}")
+        similar = recall_db.get_similar_errors(error_type=err_type, file_path=file_p)
+        logger.info(f"Similar errors found: {len(similar)}")
+        for err in similar:
+            logger.info(f"  - Attempted fix: {err.get('attempted_fix')}, Context: {err.get('context')}")
 
-        # Record a pattern violation
-        recall_db.record_pattern_violation(
-            pattern_name="copy_paste",
-            project="CAKE",
-            file_path="utils.py",
-            details={
-                "duplicate_lines": 50,
-                "locations": ["line 100-150", "line 200-250"],
-            },
-        )
+        recall_db.record_pattern_violation("GodClass", "ProjectCake", "cake_controller.py", {"lines": 1500})
 
-        # Get statistics
-        print("\nRecallDB Statistics:")
         stats = recall_db.get_statistics()
-        for key, value in stats.items():
-            print(f"  {key}: {value}")
+        logger.info(f"RecallDB Stats: {json.dumps(stats, indent=2)}")
 
-        # Test analyzer
         analyzer = RecallAnalyzer(recall_db)
+        suggestions = analyzer.get_intervention_suggestions()
+        logger.info(f"Intervention Suggestions: {json.dumps(suggestions, indent=2)}")
 
-        print("\nRepeat Offenders:")
-        for offender in analyzer.get_repeat_offenders():
-            print(f"  - {offender}")
+        logger.info("Cleaning up expired records (should be none yet with 1h TTL unless test runs >1h)...")
+        cleaned_count = recall_db.cleanup_expired()
+        logger.info(f"Cleaned {cleaned_count} records.")
 
-        print("\nIntervention Suggestions:")
-        for suggestion in analyzer.get_intervention_suggestions():
-            print(f"  - {suggestion['type']}: {suggestion['reason']}")
+        logger.info("RecallDB test completed.")
