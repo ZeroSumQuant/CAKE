@@ -288,6 +288,17 @@ class ErrorPattern(SQLModel, table=True):
     )
 
 
+class KnowledgeRelation(SQLModel, table=True):
+    """Many-to-many relationships between knowledge entries."""
+
+    __tablename__ = "knowledge_relations"
+
+    source_id: UUID = Field(foreign_key="knowledge_entries.entry_id", primary_key=True)
+    target_id: UUID = Field(foreign_key="knowledge_entries.entry_id", primary_key=True)
+    relation_type: str = Field(default="related")  # "prerequisite", "alternative", etc.
+    strength: float = Field(ge=0.0, le=1.0, default=0.5)
+
+
 class KnowledgeEntry(SQLModel, table=True):
     """Cross-task knowledge base."""
 
@@ -313,19 +324,15 @@ class KnowledgeEntry(SQLModel, table=True):
 
     # Relationships via association table
     related_entries: List["KnowledgeEntry"] = Relationship(
-        back_populates="related_entries", link_model="KnowledgeRelation"
+        link_model=KnowledgeRelation,
+        sa_relationship_kwargs={
+            "primaryjoin": 'KnowledgeEntry.entry_id == KnowledgeRelation.source_id',
+            "secondaryjoin": 'KnowledgeEntry.entry_id == KnowledgeRelation.target_id',
+            # "collection_class": list, # SQLModel default
+            # back_populates removed for self-referential m2m to avoid issues,
+            # unless a second relationship attribute is defined for the other direction.
+        }
     )
-
-
-class KnowledgeRelation(SQLModel, table=True):
-    """Many-to-many relationships between knowledge entries."""
-
-    __tablename__ = "knowledge_relations"
-
-    source_id: UUID = Field(foreign_key="knowledge_entries.entry_id", primary_key=True)
-    target_id: UUID = Field(foreign_key="knowledge_entries.entry_id", primary_key=True)
-    relation_type: str = Field(default="related")  # "prerequisite", "alternative", etc.
-    strength: float = Field(ge=0.0, le=1.0, default=0.5)
 
 
 class PerformanceMetric(SQLModel, table=True):

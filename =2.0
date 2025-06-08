@@ -1,0 +1,7 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting networkx
+  Downloading networkx-3.4.2-py3-none-any.whl.metadata (6.3 kB)
+Downloading networkx-3.4.2-py3-none-any.whl (1.7 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.7/1.7 MB 25.1 MB/s eta 0:00:00
+Installing collected packages: networkx
+Successfully installed networkx-3.4.2

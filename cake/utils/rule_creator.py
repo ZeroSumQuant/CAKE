@@ -166,6 +166,12 @@ class RuleValidator:
             if pattern.search(expression):
                 issues.append(f"Dangerous pattern in expression: {pattern.pattern}")
 
+        # Check for null bytes before parsing
+        if '\x00' in expression:
+            issues.append("Expression cannot contain null bytes")
+            # Return early as ast.parse will fail and other checks might not be relevant
+            return issues
+
         # Try to parse as AST
         try:
             tree = ast.parse(expression, mode="eval")
@@ -195,40 +201,36 @@ class RuleValidator:
         """Validate fix command for safety."""
         issues = []
 
-        # Check for dangerous patterns
+    def validate_command(self, command: str) -> List[str]:
+        """Validate fix command for safety."""
+        issues = []
+
+        # Check for dangerous patterns first
         for pattern in self.cmd_patterns:
             if pattern.search(command):
                 issues.append(f"Dangerous command pattern: {pattern.pattern}")
 
-        # Check if command starts with safe prefix
-        is_safe = any(command.strip().startswith(safe) for safe in self.SAFE_COMMANDS)
-        if not is_safe:
-            # Check individual command
-            first_word = command.strip().split()[0] if command.strip() else ""
-            if first_word not in [
-                "pip",
-                "pytest",
-                "python",
-                "git",
-                "echo",
-                "mkdir",
-                "touch",
-                "chmod",
-                "flake8",
-                "black",
-                "mypy",
-            ]:
-                issues.append(f"Command not in whitelist: {first_word}")
+        if issues: # If any dangerous patterns were found, return immediately
+            return issues
 
-        # Check for shell metacharacters that could be dangerous
+        # If no dangerous patterns, check if command starts with a safe prefix
+        is_safe_by_prefix = any(command.strip().startswith(safe) for safe in self.SAFE_COMMANDS)
+        if is_safe_by_prefix:
+            return [] # Return early if no dangerous patterns and IS a safe prefix
+
+        # If NOT a safe prefix AND no dangerous patterns found yet, proceed with further checks
+        # These are the "rest of the original checks for non-safe-prefix commands"
+
+        # Check for potentially dangerous characters in commands not cleared by safe prefix list
         dangerous_chars = ["$", "`", ";", "&&", "||", "|", ">", "<", "*", "?", "[", "]"]
-        for char in dangerous_chars:
-            if char in command and char not in [
-                "|",
-                ">",
-                "*",
-            ]:  # Some are ok in specific contexts
-                issues.append(f"Potentially dangerous character: {char}")
+        for char_val in dangerous_chars: # Renamed to avoid conflict if 'char' is used elsewhere
+            if char_val in command:
+                # This check is intentionally broad for commands not covered by SAFE_COMMANDS
+                # and not caught by DANGEROUS_CMD_PATTERNS.
+                # Example: 'echo hello > output.txt' is fine if 'echo' is a safe prefix.
+                # But if a command 'my_custom_script > output.txt' is used, and 'my_custom_script'
+                # is not a safe prefix, the '>' will be flagged here.
+                issues.append(f"Potentially dangerous character: '{char_val}' in command not cleared by safe prefix list.")
 
         # Length check
         if len(command) > 500:

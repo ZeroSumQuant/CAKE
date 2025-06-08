@@ -64,6 +64,7 @@ line-profiler>=4.1
 # Type stubs
 types-PyYAML>=6.0
 types-requests>=2.31
+redis>=5.0.0
 
 # Build tools
 build>=1.0
@@ -73,3 +74,10 @@ twine>=4.0
 # Test dependencies
 pytest-asyncio>=0.23
 mistune>=2.0.0
+factory-boy>=3.2.0
+freezegun>=1.2.2
+SQLAlchemy>=1.4.0
+sqlmodel>=0.0.14
+fakeredis>=2.20.0
+fastapi>=0.100.0
+networkx>=2.0
