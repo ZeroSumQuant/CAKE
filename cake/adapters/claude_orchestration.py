@@ -1192,7 +1192,7 @@ class ResponseAnalyzer:
 
         # Extract code blocks
         code_blocks = re.findall(
-            r"```(?:python|javascript|bash|sql)?\s*\n(.*?)\n```", response, re.DOTALL
+            r"```(?:python|javascript|bash|sql)?\s*\n(.*?)\n?```", response, re.DOTALL  # Made final \n optional
         )
         if code_blocks:
             extracted["code_blocks"] = code_blocks

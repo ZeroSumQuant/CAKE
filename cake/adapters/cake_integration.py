@@ -48,7 +48,7 @@ class CAKEIntegration:
         self.adapter = create_cake_system(config_path)
 
         # Initialize enhanced controller
-        self.controller = None  # Will be created per task
+        self.controller = CakeController(self.config_path, claude_client=self.adapter.claude_client) # Added controller initialization
 
         # Hook registration
         self._register_hooks()
@@ -101,9 +101,10 @@ class CAKEIntegration:
             Task ID for tracking
         """
         # Create controller for this task
-        self.controller = CakeController(
-            constitution=constitution, task_description=task_description
-        )
+        # self.controller = CakeController( # Removed this line
+        #     constitution=constitution, task_description=task_description
+        # )
+        await self.controller.start_task(task_description, constitution) # Added this call
 
         # Update adapter with task context
         self.adapter.update_task_context(

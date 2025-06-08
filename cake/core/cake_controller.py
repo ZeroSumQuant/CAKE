@@ -20,14 +20,14 @@ from typing import Any, Dict, List, Optional
 from cake.components.operator import OperatorBuilder
 from cake.components.recall_db import RecallDB
 from cake.components.snapshot_manager import SnapshotManager
-from cake.components.validator import TaskConvergenceValidator
+from cake.components.validator import TaskConvergenceValidator, ConvergenceStatus
 
 # Core imports
 from cake.core.pty_shim import PTYShim
 from cake.core.stage_router import StageRouter
 from cake.core.watchdog import Watchdog
 from cake.utils.cross_task_knowledge_ledger import CrossTaskKnowledgeLedger
-from cake.utils.models import Constitution
+from cake.utils.models import Constitution # Removed ConvergenceStatus here
 from cake.utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -67,15 +67,17 @@ class CakeController:
     following TRRDEVS methodology.
     """
 
-    def __init__(self, config_path: Path):
+    def __init__(self, config_path: Path, claude_client: Any):
         """
         Initialize CAKE controller.
 
         Args:
             config_path: Path to configuration directory
+            claude_client: Client for interacting with Claude API
         """
         self.config_path = config_path
         self.config = self._load_config()
+        self.claude_client = claude_client
 
         # Initialize components
         self._init_components()
@@ -111,7 +113,7 @@ class CakeController:
         self.stage_router = StageRouter()
         self.operator = OperatorBuilder()
         self.recall_db = RecallDB(self.config_path / "recall.db")
-        self.validator = TaskConvergenceValidator()
+        self.validator = TaskConvergenceValidator(claude_client=self.claude_client)
         self.knowledge_ledger = CrossTaskKnowledgeLedger(
             self.config_path / "knowledge.db"
         )
@@ -255,9 +257,17 @@ class CakeController:
 
     async def _validate_completion(self, context: TaskContext) -> bool:
         """Validate task completed successfully."""
-        return self.validator.validate_task_convergence(
-            context.stage_outputs, context.description
+        # Assuming final_artifacts might be collected elsewhere or not always present.
+        # For now, passing an empty list as a placeholder.
+        # This might need adjustment based on how artifacts are actually managed.
+        final_artifacts: List[str] = context.task_metadata.get("final_artifacts", [])
+        report = await self.validator.validate_task_convergence(
+            original_task=context.description,
+            stage_outputs=context.stage_outputs,
+            final_artifacts=final_artifacts
         )
+        # Assuming ConvergenceReport has a boolean indicator of success
+        return report.status == ConvergenceStatus.CONVERGED
 
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get current status of a task."""

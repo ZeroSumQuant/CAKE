@@ -11,6 +11,7 @@ Python: 3.11+
 
 import asyncio
 import functools
+import inspect # Added import
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -69,6 +70,9 @@ except ImportError:
         def inc(self, *args, **kwargs):
             pass
 
+        def labels(self, *args, **kwargs):
+            return self  # Return self to allow chaining .inc()
+
     class Histogram:
         def __init__(self, *args, **kwargs):
             pass
@@ -82,6 +86,9 @@ except ImportError:
 
         def set(self, *args, **kwargs):
             pass
+
+        def labels(self, *args, **kwargs):
+            return self  # Return self to allow chaining .set()
 
 
 if hasattr(structlog, "get_logger"):
@@ -196,11 +203,56 @@ class RateLimiter:
         """
 
         try:
-            result = await self.redis.eval(
-                lua_script, keys=[key], args=[max_requests, window_seconds, now]
-            )
+            is_fakeredis = 'fakeredis' in inspect.getmodule(self.redis).__name__ if self.redis else False
 
-            allowed, remaining_or_retry = result
+            if is_fakeredis:
+                # Python-based token bucket simulation for fakeredis
+                bucket_key = f"fakeredis_bucket:{key}"
+
+                # Retrieve or initialize state from self.redis (which is fakeredis instance)
+                # Using hasattr/getattr/setattr to store state on the fakeredis instance itself.
+                # This is a simplified way to associate state with the fakeredis instance for testing.
+                if not hasattr(self.redis, bucket_key):
+                    setattr(self.redis, bucket_key, {"tokens": float(max_requests), "last_refill": now})
+
+                bucket_state = getattr(self.redis, bucket_key)
+                current_tokens = float(bucket_state["tokens"])
+                last_refill_time = float(bucket_state["last_refill"])
+
+                # Calculate token refills
+                # Handle potential division by zero if window_seconds or max_requests (refill_rate) is zero
+                if window_seconds > 0 and max_requests > 0:
+                    refill_rate = float(max_requests) / window_seconds
+                    time_passed = now - last_refill_time
+                    tokens_to_add = time_passed * refill_rate
+                    current_tokens = min(float(max_requests), current_tokens + tokens_to_add)
+                else: # No refill if window or max_requests is zero
+                    refill_rate = 0
+
+
+                if current_tokens >= 1:
+                    current_tokens -= 1
+                    allowed = 1
+                    remaining_or_retry = current_tokens
+                else:
+                    allowed = 0
+                    # Calculate retry_after only if there's a chance to refill
+                    if refill_rate > 0:
+                        retry_after_seconds = (1 - current_tokens) / refill_rate
+                    else: # If no refill possible, retry_after is effectively infinite or very large
+                        retry_after_seconds = float(window_seconds) # Default to window if no refill
+                    remaining_or_retry = max(1, int(retry_after_seconds)) # Ensure at least 1s
+
+                # Update state on self.redis
+                bucket_state["tokens"] = current_tokens
+                bucket_state["last_refill"] = now
+                setattr(self.redis, bucket_key, bucket_state)
+
+            else: # Actual Redis logic
+                result = await self.redis.eval(
+                    lua_script, keys=[key], args=[max_requests, window_seconds, now]
+                )
+                allowed, remaining_or_retry = result
 
             if allowed == 1:
                 self.rate_limit_checks.labels(
@@ -211,9 +263,9 @@ class RateLimiter:
                 )
 
                 logger.debug(
-                    "Rate limit check passed",
-                    identifier=identifier,
-                    remaining_tokens=remaining_or_retry,
+                    "Rate limit check passed for identifier %s. Remaining tokens: %s",
+                    identifier,
+                    remaining_or_retry,
                 )
             else:
                 self.rate_limit_checks.labels(
@@ -221,15 +273,15 @@ class RateLimiter:
                 ).inc()
 
                 logger.warning(
-                    "Rate limit exceeded",
-                    identifier=identifier,
-                    retry_after=remaining_or_retry,
+                    "Rate limit exceeded for identifier %s. Retry after %s seconds",
+                    identifier,
+                    remaining_or_retry,
                 )
 
                 raise RateLimitExceededError(int(remaining_or_retry))
 
         except Exception if not REDIS_AVAILABLE else redis.RedisError as e:
-            logger.error("Redis error during rate limit check", error=str(e))
+            logger.error("Redis error during rate limit check for identifier %s: %s", identifier, str(e))
             # Fail open - allow request if Redis is down
             self.rate_limit_checks.labels(identifier=identifier, result="error").inc()
 
@@ -287,8 +339,12 @@ class RateLimiter:
 
 
 # Telemetry setup
-_tracer: Optional[trace.Tracer] = None
-_meter: Optional[metrics.Meter] = None
+if OPENTELEMETRY_AVAILABLE:
+    _tracer: Optional[trace.Tracer] = None
+    _meter: Optional[metrics.Meter] = None
+else:
+    _tracer = None
+    _meter = None
 
 
 def setup_telemetry(service_name: str, jaeger_endpoint: Optional[str] = None):

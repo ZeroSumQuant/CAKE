@@ -243,7 +243,7 @@ class EscalationDecider:
             else:
                 return InterventionType.RESOURCE_INCREASE
         elif level == EscalationLevel.MEDIUM:
-            if "context" in context.previous_interventions:
+            if any("context" in s.lower() for s in context.previous_interventions):
                 return InterventionType.STRATEGY_CHANGE
             else:
                 return InterventionType.CONTEXT_ADJUSTMENT
